@@ -1,0 +1,12 @@
+.build/
+dist/
+.DS_Store
+*.xcuserstate
+.playwright-cli/
+output/
+.codex/
+Extension/_metadata/
+.env
+.env.*
+*.pem
+*.key

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Browser Monitor — Settings</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="icons/browser-monitor-48.png" alt="">
+        <div><strong data-i18n="appName">Browser Monitor</strong><span data-i18n="settings">Settings</span></div>
+      </div>
+      <nav role="tablist" aria-label="Settings sections">
+        <button class="nav-tab active" type="button" role="tab" aria-selected="true" data-section-target="general"><span class="nav-icon">◈</span><span data-i18n="navGeneral">General</span></button>
+        <button class="nav-tab" type="button" role="tab" aria-selected="false" data-section-target="filters"><span class="nav-icon">A</span><span data-i18n="navFilters">Filters</span></button>
+        <button class="nav-tab" type="button" role="tab" aria-selected="false" data-section-target="page-elements"><span class="nav-icon">○</span><span data-i18n="navPageElements">Page elements</span></button>
+        <button class="nav-tab" type="button" role="tab" aria-selected="false" data-section-target="appearance"><span class="nav-icon">◇</span><span data-i18n="navAppearance">Appearance</span></button>
+        <button class="nav-tab" type="button" role="tab" aria-selected="false" data-section-target="rules"><span class="nav-icon">⌁</span><span data-i18n="navRules">Custom rules</span></button>
+        <button class="nav-tab" type="button" role="tab" aria-selected="false" data-section-target="data"><span class="nav-icon">□</span><span data-i18n="navData">Data</span></button>
+      </nav>
+      <div class="language-picker">
+        <label for="language-select" data-i18n="language">Language</label>
+        <select id="language-select">
+          <option value="en" data-i18n="english">English</option>
+          <option value="ru" data-i18n="russian">Русский</option>
+        </select>
+      </div>
+    </aside>
+
+    <main>
+      <header class="hero">
+        <div class="hero-copy">
+          <h1 data-i18n="settingsTitle">Settings</h1>
+          <p data-i18n="settingsDescription">Manage protection, tab analytics, page tools, and local data from one place.</p>
+        </div>
+        <div class="status-card">
+          <div class="status-orbit"><span></span><i></i></div>
+          <div><strong id="hero-status">Protection is on</strong><span data-i18n="statusDescription">Main browser protection status</span></div>
+        </div>
+      </header>
+
+      <section id="general" class="settings-section settings-panel" role="tabpanel">
+        <div class="section-intro"><div><h2 data-i18n="sectionGeneral">General</h2><p data-i18n="sectionGeneralDescription"></p></div></div>
+        <div class="setting-grid feature-grid">
+          <article class="setting-card featured"><div class="setting-icon shield">◈</div><div class="setting-copy"><h3 data-i18n="masterProtection"></h3><p data-i18n="masterProtectionDescription"></p></div><label class="switch"><input id="contentBlockingEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">⌁</div><div class="setting-copy"><h3 data-i18n="tabAnalysis"></h3><p data-i18n="tabAnalysisDescription"></p></div><label class="switch"><input id="monitoringEnabled" type="checkbox"><span></span></label></article>
+        </div>
+      </section>
+
+      <section id="filters" class="settings-section settings-panel" role="tabpanel" hidden>
+        <div class="section-intro"><div><h2 data-i18n="sectionFilters">Filters</h2><p data-i18n="sectionFiltersDescription"></p></div></div>
+        <div class="setting-grid">
+          <article class="setting-card"><div class="setting-icon">A</div><div class="setting-copy"><h3 data-i18n="easyList"></h3><p data-i18n="easyListDescription"></p></div><label class="switch"><input data-setting="adFilterEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">P</div><div class="setting-copy"><h3 data-i18n="easyPrivacy"></h3><p data-i18n="easyPrivacyDescription"></p></div><label class="switch"><input data-setting="privacyFilterEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">₿</div><div class="setting-copy"><h3 data-i18n="crypto"></h3><p data-i18n="cryptoDescription"></p></div><label class="switch"><input data-setting="cryptominingProtectionEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">✦</div><div class="setting-copy"><h3 data-i18n="cosmetic"></h3><p data-i18n="cosmeticDescription"></p></div><label class="switch"><input data-setting="cosmeticFilteringEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">RU</div><div class="setting-copy"><h3 data-i18n="russianFilters"></h3><p data-i18n="russianFiltersDescription"></p></div><label class="switch"><input data-setting="regionalRussianFilteringEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">@</div><div class="setting-copy"><h3 data-i18n="socialFilters"></h3><p data-i18n="socialFiltersDescription"></p></div><label class="switch"><input data-setting="socialWidgetBlockingEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">!</div><div class="setting-copy"><h3 data-i18n="warningFilters"></h3><p data-i18n="warningFiltersDescription"></p></div><label class="switch"><input data-setting="antiAdblockMessageBlockingEnabled" type="checkbox"><span></span></label></article>
+        </div>
+      </section>
+
+      <section id="page-elements" class="settings-section settings-panel" role="tabpanel" hidden>
+        <div class="section-intro"><div><h2 data-i18n="sectionPageElements"></h2><p data-i18n="sectionPageElementsDescription"></p></div></div>
+        <div class="setting-grid">
+          <article class="setting-card"><div class="setting-icon">✓</div><div class="setting-copy"><h3 data-i18n="cookieBanners"></h3><p data-i18n="cookieBannersDescription"></p></div><label class="switch"><input data-setting="cookieBannerBlockingEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">✉</div><div class="setting-copy"><h3 data-i18n="newsletters"></h3><p data-i18n="newslettersDescription"></p></div><label class="switch"><input data-setting="newsletterBlockingEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">?</div><div class="setting-copy"><h3 data-i18n="surveys"></h3><p data-i18n="surveysDescription"></p></div><label class="switch"><input data-setting="surveyBlockingEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">◌</div><div class="setting-copy"><h3 data-i18n="notificationPrompts"></h3><p data-i18n="notificationPromptsDescription"></p></div><label class="switch"><input data-setting="notificationPromptBlockingEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">▶</div><div class="setting-copy"><h3 data-i18n="autoplay"></h3><p data-i18n="autoplayDescription"></p></div><label class="switch"><input data-setting="autoplayBlockingEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">▣</div><div class="setting-copy"><h3 data-i18n="floatingVideo"></h3><p data-i18n="floatingVideoDescription"></p></div><label class="switch"><input data-setting="floatingVideoBlockingEnabled" type="checkbox"><span></span></label></article>
+        </div>
+      </section>
+
+      <section id="appearance" class="settings-section settings-panel" role="tabpanel" hidden>
+        <div class="section-intro"><div><h2 data-i18n="sectionAppearance"></h2><p data-i18n="sectionAppearanceDescription"></p></div></div>
+        <div class="wide-card image-swap-card">
+          <div class="card-heading"><div class="setting-icon">▧</div><div class="setting-copy"><h3 data-i18n="imageSwap"></h3><p data-i18n="imageSwapDescription"></p></div><label class="switch"><input data-setting="imageSwapEnabled" type="checkbox"><span></span></label></div>
+          <fieldset id="image-swap-options">
+            <legend data-i18n="imageCollection">Artwork collection</legend>
+            <div class="artwork-options">
+              <label class="artwork-option landscape"><input type="radio" name="imageSwapTheme" value="landscape"><span aria-hidden="true"></span><b data-i18n="landscape"></b></label>
+              <label class="artwork-option ocean"><input type="radio" name="imageSwapTheme" value="ocean"><span aria-hidden="true"></span><b data-i18n="ocean"></b></label>
+              <label class="artwork-option minimal"><input type="radio" name="imageSwapTheme" value="minimal"><span aria-hidden="true"></span><b data-i18n="minimal"></b></label>
+              <label class="artwork-option custom"><input type="radio" name="imageSwapTheme" value="custom"><span aria-hidden="true"></span><b data-i18n="custom"></b></label>
+            </div>
+            <div class="custom-image-row">
+              <div><strong data-i18n="customImages"></strong><p data-i18n="customImagesDescription"></p><span id="custom-image-count" data-i18n="noCustomImages"></span></div>
+              <div class="button-row"><button id="choose-images" class="secondary-button" data-i18n="chooseImages"></button><button id="remove-images" class="quiet-button" data-i18n="removeImages"></button></div>
+              <input id="image-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/bmp" multiple hidden>
+            </div>
+          </fieldset>
+        </div>
+        <div class="wide-card theme-card"><div class="card-heading"><div class="setting-icon">◐</div><div class="setting-copy"><h3 data-i18n="interfaceTheme"></h3><p data-i18n="interfaceThemeDescription"></p></div></div><div class="theme-options"><button data-theme-value="system" data-i18n="themeSystem"></button><button data-theme-value="light" data-i18n="themeLight"></button><button data-theme-value="dark" data-i18n="themeDark"></button><button data-theme-value="solarized" data-i18n="themeSolarized"></button><button data-theme-value="forest" data-i18n="themeForest"></button></div></div>
+      </section>
+
+      <section id="rules" class="settings-section settings-panel" role="tabpanel" hidden>
+        <div class="section-intro"><div><h2 data-i18n="sectionRules"></h2><p data-i18n="sectionRulesDescription"></p></div></div>
+        <div class="rule-grid">
+          <label class="editor-card"><strong data-i18n="siteExceptions"></strong><span data-i18n="siteExceptionsDescription"></span><textarea id="allowlistedSites" rows="5" spellcheck="false"></textarea></label>
+          <label class="editor-card"><strong data-i18n="blockedDomains"></strong><span data-i18n="blockedDomainsDescription"></span><textarea id="customBlockedDomains" rows="5" spellcheck="false"></textarea></label>
+          <label class="editor-card"><strong data-i18n="cosmeticRules"></strong><span data-i18n="cosmeticRulesDescription"></span><textarea id="customCosmeticFilters" rows="5" spellcheck="false"></textarea></label>
+          <label class="editor-card"><strong data-i18n="filterSubscriptions"></strong><span data-i18n="filterSubscriptionsDescription"></span><textarea id="customFilterListURLs" rows="5" spellcheck="false"></textarea></label>
+        </div>
+        <div id="subscription-statuses" class="subscription-statuses"></div>
+        <div class="section-actions"><button id="save-rules" class="primary-button" data-i18n="saveRules"></button><button id="update-lists" class="secondary-button" data-i18n="updateLists"></button></div>
+      </section>
+
+      <section id="data" class="settings-section settings-panel" role="tabpanel" hidden>
+        <div class="section-intro"><div><h2 data-i18n="sectionData"></h2><p data-i18n="sectionDataDescription"></p></div></div>
+        <div class="data-grid">
+          <article class="info-card local-card"><div class="info-symbol">⌂</div><div><h3 data-i18n="localOnly"></h3><p data-i18n="localOnlyDescription"></p></div></article>
+          <article class="info-card"><div class="info-symbol">↕</div><div><h3 data-i18n="backup"></h3><p data-i18n="backupDescription"></p><div class="button-row"><button id="export-settings" class="secondary-button" data-i18n="exportSettings"></button><button id="import-settings" class="secondary-button" data-i18n="importSettings"></button><button id="reset-settings" class="quiet-button danger" data-i18n="resetSettings"></button></div><input id="settings-file-input" type="file" accept="application/json" hidden></div></article>
+        </div>
+      </section>
+      <div id="save-toast" role="status" aria-live="polite"></div>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

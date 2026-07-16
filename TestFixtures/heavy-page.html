@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <title>Browser Monitor Heavy Test</title>
+    <style>
+      body { font: 16px system-ui; padding: 40px; }
+      .spinner {
+        width: 120px;
+        height: 120px;
+        border: 18px solid #ddd;
+        border-top-color: #0a84ff;
+        border-radius: 50%;
+        animation: spin 0.35s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <h1>Heavy test page</h1>
+    <div class="spinner"></div>
+    <div id="onetrust-banner-sdk">Cookie consent test banner</div>
+    <div id="ad-container-banner" style="width: 300px; height: 250px">Advertisement probe</div>
+    <video muted autoplay loop width="320"></video>
+    <canvas width="320" height="180" hidden></canvas>
+    <script>
+      document.cookie = "browser_monitor_e2e=temporary; path=/; SameSite=Lax";
+      window.__successfulPingCount = 0;
+      const canvas = document.querySelector("canvas");
+      const context = canvas.getContext("2d");
+      const video = document.querySelector("video");
+      let frame = 0;
+      setInterval(() => {
+        context.fillStyle = `hsl(${frame++ % 360} 70% 45%)`;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+      }, 50);
+      window.addEventListener("load", () => {
+        video.srcObject = canvas.captureStream(20);
+        video.play().catch(() => {});
+      }, { once: true });
+      setInterval(() => {
+        const started = performance.now();
+        while (performance.now() - started < 65) {}
+      }, 280);
+      setInterval(() => {
+        fetch(`/ping?time=${Date.now()}`)
+          .then(() => { window.__successfulPingCount += 1; })
+          .catch(() => {});
+      }, 220);
+    </script>
+  </body>
+</html>

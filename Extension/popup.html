@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Browser Monitor</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <img class="brand-icon" src="icons/browser-monitor-48.png" alt="">
+      <div class="brand-lockup">
+        <h1 data-i18n="appName">Browser Monitor</h1>
+        <p id="summary" data-i18n="collecting">Collecting data…</p>
+      </div>
+      <div class="header-actions">
+        <button id="settings-button" class="settings-button" type="button" data-i18n-title="settingsHint" data-i18n-aria="openSettings">⚙</button>
+        <label class="toggle-control" data-i18n-title="tabAnalysisDescription">
+          <span class="sr-only" data-i18n="tabAnalysis">Tab analysis</span>
+          <input id="monitoring-toggle" type="checkbox">
+        </label>
+      </div>
+    </header>
+
+    <section class="protection-section" aria-labelledby="protection-title">
+      <div class="protection-card">
+        <div class="shield-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 36">
+            <path d="M16 2.5 28 7v9.2c0 8.1-5.1 14.4-12 17.3C9.1 30.6 4 24.3 4 16.2V7l12-4.5Z"/>
+          </svg>
+        </div>
+        <div class="protection-copy">
+          <div id="protection-title" class="protection-title" data-i18n="protectionOn">Protection is on</div>
+          <div class="protection-detail">
+            <span id="rule-count">—</span>
+          </div>
+        </div>
+        <label class="toggle-control">
+          <span class="sr-only" data-i18n="masterProtection">Ad and tracker blocking</span>
+          <input id="blocker-toggle" type="checkbox">
+        </label>
+      </div>
+
+      <div class="site-actions">
+      <button id="site-toggle" class="site-control" type="button" disabled>
+        <span class="site-control-copy">
+          <strong id="site-control-title" data-i18n="currentSite">Current site</strong>
+          <small id="site-control-detail" data-i18n="checkingAddress">Checking address…</small>
+        </span>
+        <span id="site-control-action" data-i18n="excludeSite">Exclude site</span>
+      </button>
+      <button id="pause-site-button" class="pause-site-button" type="button" disabled data-i18n="pause10">Pause 10 min</button>
+      </div>
+
+      <details id="exceptions" class="exceptions" hidden>
+        <summary><span data-i18n="exceptions">Exceptions</span> <span id="exception-count">0</span></summary>
+        <div id="exception-list" class="exception-list"></div>
+      </details>
+    </section>
+
+    <section class="tabs-section" aria-labelledby="tabs-title">
+      <div class="section-heading">
+        <span id="tabs-title" data-i18n="tabActivity">Tab Activity</span>
+        <span id="tabs-count">0</span>
+      </div>
+      <main id="tab-list"></main>
+      <div id="more-tabs" class="more-tabs" hidden>
+        <button id="previous-tabs" type="button" aria-label="Previous tabs">‹</button>
+        <span id="tab-page-label"></span>
+        <button id="next-tabs" type="button" aria-label="Next tabs">›</button>
+      </div>
+    </section>
+
+    <section class="utility-section" aria-labelledby="utilities-title">
+      <div class="section-heading compact-heading">
+        <span id="utilities-title" data-i18n="tools">Tools</span>
+      </div>
+      <div class="tool-strip">
+        <button id="pip-button" class="tool-button" type="button" aria-pressed="false" title="Picture-in-Picture">
+          <span class="tool-symbol" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M9 9.5 15 12l-6 2.5v-5Z"/></svg>
+          </span>
+          <span>PiP</span>
+        </button>
+        <button id="cookies-button" class="tool-button wide" type="button" title="View and export cookies for the current site">
+          <span class="tool-symbol cookie-symbol" aria-hidden="true">◌</span>
+          <span data-i18n="cookies">Cookies</span>
+        </button>
+        <button id="block-element-button" class="tool-button wide" type="button" title="Pick an element to hide on this page">
+          <span class="tool-symbol" aria-hidden="true">⌖</span>
+          <span data-i18n="blockElement">Block</span>
+        </button>
+        <span id="pip-status" class="sr-only" aria-live="polite">Looking for video in the current tab…</span>
+      </div>
+    </section>
+
+    <footer>
+      <span class="connection"><i></i><span id="host-status">Checking app…</span></span>
+      <button id="refresh-button" class="text-button" type="button">↻&nbsp; <span data-i18n="refresh">Refresh</span></button>
+    </footer>
+
+    <section id="tab-detail-panel" class="overlay-panel" aria-labelledby="tab-detail-title" hidden>
+      <header class="panel-header">
+        <button id="close-tab-detail" class="back-button" type="button" aria-label="Back">‹</button>
+        <div>
+          <h2 id="tab-detail-title" data-i18n="tabDetails">Tab details</h2>
+          <p id="tab-detail-host"></p>
+        </div>
+        <span id="tab-detail-score" class="detail-score"></span>
+      </header>
+      <div class="detail-body">
+        <div class="detail-hero">
+          <span id="tab-detail-dot" class="dot"></span>
+          <div>
+            <strong id="tab-detail-name"></strong>
+            <p id="tab-detail-state"></p>
+          </div>
+        </div>
+        <div id="metric-grid" class="metric-grid"></div>
+        <div class="detail-note">
+          <span class="detail-label" data-i18n="whyItMatters">Why it matters</span>
+          <ul id="tab-detail-reasons"></ul>
+        </div>
+        <div class="detail-note recommendation-note">
+          <span class="detail-label" data-i18n="recommendation">Recommendation</span>
+          <p id="tab-detail-recommendation"></p>
+        </div>
+        <button id="detail-eco-button" class="primary-panel-button" type="button"></button>
+      </div>
+    </section>
+
+    <section id="cookies-panel" class="overlay-panel" aria-labelledby="cookies-title" hidden>
+      <header class="panel-header">
+        <button id="close-cookies" class="back-button" type="button" aria-label="Back">‹</button>
+        <div>
+          <h2 id="cookies-title" data-i18n="cookies">Cookies</h2>
+          <p id="cookies-host" data-i18n="currentSite">Current site</p>
+        </div>
+        <span id="cookies-count" class="panel-count">0</span>
+      </header>
+      <div class="cookies-body">
+        <div class="export-actions">
+          <button id="export-cookies" type="button" data-i18n="export">Export</button>
+          <button id="save-as-cookies" type="button" data-i18n="saveAs">Save As</button>
+          <button id="copy-cookies" type="button" data-i18n="copy">Copy</button>
+        </div>
+        <button id="export-all-cookies" class="secondary-panel-button" type="button" data-i18n="exportAllCookies">Export all browser cookies</button>
+        <div class="format-row">
+          <label for="cookie-format" data-i18n="exportFormat">Export format</label>
+          <select id="cookie-format">
+            <option value="netscape">Netscape cookies.txt</option>
+            <option value="json">JSON</option>
+          </select>
+        </div>
+        <div class="cookie-table-wrap">
+          <table>
+            <thead><tr><th>Domain</th><th>Name</th><th>Value</th><th>Flags</th></tr></thead>
+            <tbody id="cookie-table"></tbody>
+          </table>
+          <div id="cookies-empty" class="cookie-empty" hidden data-i18n="noCookies">No cookies found for this site.</div>
+        </div>
+        <div class="cookie-pagination">
+          <button id="previous-cookies" type="button">‹</button>
+          <span id="cookie-page-label">1 / 1</span>
+          <button id="next-cookies" type="button">›</button>
+        </div>
+        <p id="cookie-status" class="privacy-note" aria-live="polite" data-i18n="cookieWarning">Cookie files can grant account access. Keep exports private.</p>
+      </div>
+    </section>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

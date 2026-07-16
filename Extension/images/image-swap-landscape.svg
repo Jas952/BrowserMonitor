@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-label="Quiet mountain landscape">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#a9bac1"/><stop offset="1" stop-color="#d8dedb"/></linearGradient>
+    <linearGradient id="land" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#40565c"/><stop offset="1" stop-color="#263b42"/></linearGradient>
+  </defs>
+  <rect width="800" height="450" fill="url(#sky)"/>
+  <circle cx="640" cy="105" r="48" fill="#eef1e9" opacity=".75"/>
+  <path d="M0 370 190 155l95 112 92-78 185 181Z" fill="#71868a"/>
+  <path d="M120 450 390 178l112 120 78-70 220 222Z" fill="url(#land)"/>
+  <path d="m190 155 40 48-76 11Z" fill="#eef1e9" opacity=".8"/>
+</svg>

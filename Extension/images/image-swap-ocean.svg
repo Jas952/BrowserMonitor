@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-label="Calm ocean">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#90aeb8"/><stop offset=".52" stop-color="#d4dcda"/><stop offset=".53" stop-color="#557985"/><stop offset="1" stop-color="#284d59"/></linearGradient></defs>
+  <rect width="800" height="450" fill="url(#g)"/>
+  <circle cx="610" cy="122" r="42" fill="#f0eee4" opacity=".72"/>
+  <path d="M0 300q100-28 200 0t200 0 200 0 200 0v150H0Z" fill="#3e6875" opacity=".8"/>
+  <path d="M0 350q80-20 160 0t160 0 160 0 160 0 160 0" fill="none" stroke="#b9ccce" stroke-width="8" opacity=".55"/>
+</svg>
