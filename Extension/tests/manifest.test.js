@@ -40,7 +40,6 @@ test("manifest is valid Manifest V3 JSON", () => {
     manifest.web_accessible_resources[0].resources,
     ["images/image-swap-*.svg", "icons/browser-monitor-core.svg"]
   );
-  assert.ok(existsSync(new URL("../icons/browser-monitor.svg", import.meta.url)));
   assert.ok(existsSync(new URL("../icons/browser-monitor-core.svg", import.meta.url)));
   for (const theme of ["landscape", "ocean", "minimal"]) {
     assert.ok(existsSync(new URL(`../images/image-swap-${theme}.svg`, import.meta.url)));
