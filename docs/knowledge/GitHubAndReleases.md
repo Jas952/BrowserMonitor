@@ -34,10 +34,6 @@
 Release notes пишутся на английском языке в следующем формате:
 
 ```markdown
-# Browser Monitor X.Y.Z
-
-One short paragraph explaining the release in user-facing language.
-
 ## What’s new
 
 - three to six user-visible changes;
@@ -48,10 +44,6 @@ One short paragraph explaining the release in user-facing language.
 
 This release also includes general reliability, compatibility, performance, and interface improvements across browser protection and analytics.
 
-## Privacy
-
-Include this section when the release processes new data, changes permissions, or adds an external interaction. Otherwise briefly confirm that Browser Monitor remains local-first.
-
 ## Install
 
 1. Download `browser-monitor-X.Y.Z.zip` below.
@@ -59,12 +51,9 @@ Include this section when the release processes new data, changes permissions, o
 3. Open `chrome://extensions` and enable **Developer mode**.
 4. Select **Load unpacked** and choose the extracted folder containing `manifest.json`.
 5. Pin Browser Monitor to the Chrome toolbar.
-
-## Downloads
-
-- `browser-monitor-X.Y.Z.zip` — unpacked Chrome extension package;
-- `SHA256SUMS.txt` — checksum for archive verification.
 ```
+
+Название версии уже отображается в заголовке GitHub Release, поэтому его не нужно повторять внутри description. Разделы `Downloads` и `Privacy` также не добавляются: assets GitHub показывает отдельно, а постоянная privacy-информация находится в README и Privacy Policy.
 
 ## Как описывать изменения
 

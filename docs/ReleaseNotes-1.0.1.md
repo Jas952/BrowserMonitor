@@ -1,7 +1,3 @@
-# Browser Monitor 1.0.1
-
-This release expands Browser Monitor into a more complete local browser protection and activity companion while keeping user data under the user's control.
-
 ## What’s new
 
 - stronger protection against ads, trackers, intrusive page elements, video advertising, and sponsored segments on supported sites;
@@ -15,10 +11,6 @@ This release expands Browser Monitor into a more complete local browser protecti
 
 This release also includes general reliability, compatibility, performance, and interface improvements across browser protection and analytics.
 
-## Privacy
-
-Browser Monitor remains local-first and has no account, advertising SDK, or developer-operated analytics server. Activity analytics stores compact domain-level counters rather than page content. Sensitive tools request permission only when the user opens them, and feedback is submitted only after explicit confirmation on GitHub.
-
 ## Install
 
 1. Download `browser-monitor-1.0.1.zip` below.
@@ -28,8 +20,3 @@ Browser Monitor remains local-first and has no account, advertising SDK, or deve
 5. Pin Browser Monitor to the Chrome toolbar.
 
 Keep the extracted folder after installation. Chrome Web Store installation is not included in this release.
-
-## Downloads
-
-- `browser-monitor-1.0.1.zip` — unpacked Chrome extension package;
-- `SHA256SUMS.txt` — checksum for archive verification.
