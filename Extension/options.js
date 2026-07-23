@@ -13,6 +13,8 @@ const toast = document.querySelector("#save-toast");
 let language = "en";
 let uiPreferences = { language: null, theme: "system", activeSection: "general" };
 let protectionSettings = {};
+let linkSafety = { settings: {}, allowedDomains: [], blockedDomains: [] };
+let historyPrivacy = { enabled: false, domains: [] };
 let customImages = [];
 let toastTimer = null;
 const MAX_CUSTOM_IMAGES = 9;
@@ -21,6 +23,25 @@ const MAX_CUSTOM_IMAGES_TOTAL_BYTES = 6 * 1_048_576;
 const CUSTOM_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp"]);
 
 const t = (key, values) => translate(language, key, values);
+
+function enhanceSettingControls() {
+  document.querySelectorAll(".setting-card").forEach((card, index) => {
+    const input = card.querySelector('input[type="checkbox"]');
+    const heading = card.querySelector(".setting-copy h3");
+    const description = card.querySelector(".setting-copy p");
+    if (!input || !heading) return;
+
+    const baseId = input.id || input.dataset.setting || input.dataset.linkSafetySetting || `setting-${index}`;
+    const safeId = baseId.replace(/[^a-z0-9_-]/gi, "-");
+    heading.id ||= `${safeId}-label`;
+    input.setAttribute("aria-labelledby", heading.id);
+    input.setAttribute("role", "switch");
+    if (description) {
+      description.id ||= `${safeId}-description`;
+      input.setAttribute("aria-describedby", description.id);
+    }
+  });
+}
 
 function showToast(key, values) {
   clearTimeout(toastTimer);
@@ -43,13 +64,23 @@ async function saveUIPreferences(partial) {
 }
 
 function showSection(requestedSection, persist = true) {
+  const sectionAliases = {
+    filters: "protection",
+    "page-elements": "protection",
+    "link-safety": "privacy",
+    "history-privacy": "privacy"
+  };
   const available = [...document.querySelectorAll(".settings-panel")].map((panel) => panel.id);
-  const section = available.includes(requestedSection) ? requestedSection : "general";
+  const mappedSection = sectionAliases[requestedSection] ?? requestedSection;
+  const section = available.includes(mappedSection) ? mappedSection : "general";
   document.querySelectorAll(".settings-panel").forEach((panel) => {
     panel.hidden = panel.id !== section;
+    panel.setAttribute("aria-labelledby", `${panel.id}-tab`);
   });
   document.querySelectorAll(".nav-tab").forEach((button) => {
     const selected = button.dataset.sectionTarget === section;
+    button.id = `${button.dataset.sectionTarget}-tab`;
+    button.setAttribute("aria-controls", button.dataset.sectionTarget);
     button.classList.toggle("active", selected);
     button.setAttribute("aria-selected", String(selected));
   });
@@ -60,6 +91,8 @@ function showSection(requestedSection, persist = true) {
 document.querySelectorAll(".nav-tab").forEach((button) => {
   button.addEventListener("click", () => showSection(button.dataset.sectionTarget));
 });
+
+enhanceSettingControls();
 
 function renderCustomImages() {
   customImageCount.textContent = customImages.length
@@ -112,6 +145,13 @@ function renderSettings() {
   document.querySelectorAll("[data-setting]").forEach((input) => {
     input.checked = Boolean(protectionSettings[input.dataset.setting]);
   });
+  document.querySelectorAll("[data-link-safety-setting]").forEach((input) => {
+    input.checked = Boolean(linkSafety.settings?.[input.dataset.linkSafetySetting]);
+  });
+  document.querySelector("#linkSafetyAllowedDomains").value = (linkSafety.allowedDomains ?? []).join("\n");
+  document.querySelector("#linkSafetyBlockedDomains").value = (linkSafety.blockedDomains ?? []).join("\n");
+  document.querySelector("#historyPrivacyEnabled").checked = historyPrivacy.enabled === true;
+  document.querySelector("#historyPrivacyDomains").value = (historyPrivacy.domains ?? []).join("\n");
   const theme = protectionSettings.imageSwapTheme || "landscape";
   const themeRadio = document.querySelector(`input[name="imageSwapTheme"][value="${CSS.escape(theme)}"]`)
     ?? document.querySelector('input[name="imageSwapTheme"][value="landscape"]');
@@ -141,6 +181,53 @@ async function saveProtection(partial, silent = false) {
   return true;
 }
 
+async function saveLinkSafety(partial = {}, silent = false) {
+  const result = await chrome.runtime.sendMessage({
+    kind: "setLinkSafetySettings",
+    settings: partial.settings,
+    allowedDomains: partial.allowedDomains,
+    blockedDomains: partial.blockedDomains
+  });
+  if (!result?.ok) {
+    showToast("error");
+    return false;
+  }
+  linkSafety = {
+    settings: result.settings,
+    allowedDomains: result.allowedDomains,
+    blockedDomains: result.blockedDomains
+  };
+  renderSettings();
+  if (!silent) showToast("saved");
+  return true;
+}
+
+async function ensureHistoryPermission() {
+  return chrome.permissions.request({ permissions: ["history"] }).catch(() => false);
+}
+
+async function saveHistoryPrivacy(partial = {}, silent = false) {
+  if (partial.enabled === true && !await ensureHistoryPermission()) {
+    showToast("permissionRequired");
+    return false;
+  }
+  const result = await chrome.runtime.sendMessage({
+    kind: "setHistoryPrivacySettings",
+    settings: {
+      ...historyPrivacy,
+      ...partial
+    }
+  });
+  if (!result?.ok) {
+    showToast("error");
+    return false;
+  }
+  historyPrivacy = result.settings;
+  renderSettings();
+  if (!silent) showToast("saved");
+  return true;
+}
+
 function normalizedLines(value, limit) {
   return [...new Set(value.split(/\r?\n/)
     .map((line) => line.trim())
@@ -159,6 +246,8 @@ async function load() {
     })
   ]);
   protectionSettings = settings;
+  linkSafety = state.linkSafety ?? { settings: {}, allowedDomains: [], blockedDomains: [] };
+  historyPrivacy = state.historyPrivacy ?? { enabled: false, domains: [] };
   uiPreferences = storage.uiPreferences;
   customImages = sanitizeCustomImages(storage.imageSwapCustomImages);
   language = uiPreferences.language || browserLanguage();
@@ -178,6 +267,12 @@ document.querySelectorAll("[data-setting]").forEach((input) => {
   input.addEventListener("change", async () => {
     if (input.dataset.setting === "imageSwapEnabled") imageSwapOptions.disabled = !input.checked;
     await saveProtection({ [input.dataset.setting]: input.checked });
+  });
+});
+
+document.querySelectorAll("[data-link-safety-setting]").forEach((input) => {
+  input.addEventListener("change", async () => {
+    await saveLinkSafety({ settings: { [input.dataset.linkSafetySetting]: input.checked } });
   });
 });
 
@@ -254,6 +349,41 @@ document.querySelector("#save-rules").addEventListener("click", async () => {
   renderSubscriptions(storage.filterSubscriptions);
 });
 
+document.querySelector("#save-link-safety").addEventListener("click", async () => {
+  await saveLinkSafety({
+    allowedDomains: normalizedLines(document.querySelector("#linkSafetyAllowedDomains").value, 500),
+    blockedDomains: normalizedLines(document.querySelector("#linkSafetyBlockedDomains").value, 500)
+  });
+});
+
+document.querySelector("#historyPrivacyEnabled").addEventListener("change", async (event) => {
+  await saveHistoryPrivacy({ enabled: event.currentTarget.checked });
+});
+
+document.querySelector("#save-history-privacy").addEventListener("click", async () => {
+  await saveHistoryPrivacy({
+    domains: normalizedLines(document.querySelector("#historyPrivacyDomains").value, 500)
+  });
+});
+
+document.querySelector("#purge-history-privacy").addEventListener("click", async (event) => {
+  if (!await ensureHistoryPermission()) {
+    showToast("permissionRequired");
+    return;
+  }
+  event.currentTarget.disabled = true;
+  try {
+    await saveHistoryPrivacy({
+      enabled: true,
+      domains: normalizedLines(document.querySelector("#historyPrivacyDomains").value, 500)
+    }, true);
+    const result = await chrome.runtime.sendMessage({ kind: "purgeHistoryPrivacyDomains" });
+    showToast(result?.permissionRequired ? "permissionRequired" : "saved");
+  } finally {
+    event.currentTarget.disabled = false;
+  }
+});
+
 document.querySelector("#update-lists").addEventListener("click", async (event) => {
   event.currentTarget.disabled = true;
   try {
@@ -279,6 +409,8 @@ document.querySelector("#export-settings").addEventListener("click", async () =>
     schemaVersion: 2,
     exportedAt: new Date().toISOString(),
     protectionSettings: settings,
+    linkSafety: state.linkSafety,
+    historyPrivacy: state.historyPrivacy,
     contentBlockingEnabled: state.contentBlockingEnabled,
     monitoringEnabled: state.monitoringEnabled,
     uiPreferences,
@@ -323,6 +455,14 @@ document.querySelector("#reset-settings").addEventListener("click", async () => 
     await load();
   } else {
     showToast("error");
+  }
+});
+
+document.querySelector("#open-feedback").addEventListener("click", async () => {
+  try {
+    await chrome.windows.create({ url: chrome.runtime.getURL("feedback.html"), type: "popup", width: 580, height: 700 });
+  } catch {
+    await chrome.tabs.create({ url: chrome.runtime.getURL("feedback.html") });
   }
 });
 

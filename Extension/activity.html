@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browser Monitor — Site activity</title>
+  <link rel="stylesheet" href="activity.css">
+</head>
+<body>
+  <header>
+    <div class="brand"><img src="icons/browser-monitor-48.png" alt=""><div><h1 id="activity-title">Site activity</h1><p id="activity-subtitle">Active time only · data stays on this device</p></div></div>
+    <div class="periods" role="tablist" aria-label="Period">
+      <button role="tab" data-period="day" aria-selected="true">Day</button>
+      <button role="tab" data-period="week" aria-selected="false">Week</button>
+      <button role="tab" data-period="month" aria-selected="false">Month</button>
+    </div>
+  </header>
+  <main>
+    <section class="metrics" aria-label="Summary metrics">
+      <article class="metric accent"><span id="active-label">Active time</span><strong id="active-time">0 min</strong><small id="active-detail">0 visits</small></article>
+      <article class="metric"><span id="average-label">Average visit</span><strong id="average-time">0 min</strong><small id="average-detail">per active visit</small></article>
+      <article class="metric video"><span id="video-label">Video watching</span><strong id="video-time">0 min</strong><small id="video-detail">excluding background and ad videos</small></article>
+      <article class="metric reading"><span id="reading-label">Reading</span><strong id="reading-time">0 min</strong><small id="reading-detail">pages with substantial text</small></article>
+    </section>
+
+    <section class="chart-card">
+      <div class="section-title"><div><h2 id="chart-title">Activity trend</h2><p id="chart-detail">Active time, video and reading by day</p></div><div id="chart-legend" class="legend"><i class="all"></i>total <i class="video"></i>video <i class="read"></i>reading</div></div>
+      <div id="activity-chart" class="chart" aria-label="Activity chart"></div>
+    </section>
+
+    <section class="lower-grid">
+      <article class="sites-card">
+        <div class="section-title"><div><h2 id="sites-title">Top sites</h2><p id="sites-detail">Sorted by active time</p></div><span id="site-count">0 sites</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr id="site-headings"><th>Site</th><th>Total visits</th><th>Period</th><th>Time</th><th>Average</th><th>Video</th><th>Reading</th></tr></thead>
+            <tbody id="site-rows"></tbody>
+          </table>
+          <p id="empty-state" class="empty">Statistics will appear after active site use.</p>
+        </div>
+      </article>
+
+      <aside class="reality-card">
+        <div class="section-title"><div><h2 id="reality-title">Reality check</h2><p id="reality-detail">A little honest arithmetic</p></div><span>🙂</span></div>
+        <div class="reality-main"><strong id="workday-percent">0%</strong><span id="workday-detail">of an 8-hour workday</span></div>
+        <dl>
+          <div><dt id="focus-label">Focus blocks lost</dt><dd id="focus-blocks">0</dd></div>
+          <div><dt id="coffee-label">Coffee breaks</dt><dd id="coffee-breaks">0</dd></div>
+          <div><dt id="films-label">Feature films</dt><dd id="feature-films">0</dd></div>
+        </dl>
+        <p id="reality-note">The internet is behaving so far.</p>
+      </aside>
+    </section>
+  </main>
+  <footer><p id="privacy-note">Only a focused, visible tab with recent interaction is counted. Domains and daily counters are kept for 90 days — without full URLs or page titles.</p><button id="clear-activity" type="button">Clear statistics</button></footer>
+  <script type="module" src="activity-page.js"></script>
+</body>
+</html>

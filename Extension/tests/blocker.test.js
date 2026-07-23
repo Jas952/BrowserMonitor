@@ -17,10 +17,13 @@ import {
 test("static blocker metadata matches the packaged rules", () => {
   const easyList = JSON.parse(readFileSync(new URL("../rules/easylist-network.json", import.meta.url)));
   const easyPrivacy = JSON.parse(readFileSync(new URL("../rules/easyprivacy-network.json", import.meta.url)));
-  const rules = [...easyList, ...easyPrivacy];
+  const ruAdList = JSON.parse(readFileSync(new URL("../rules/ruadlist-network.json", import.meta.url)));
+  const rules = [...easyList, ...easyPrivacy, ...ruAdList];
   const cosmeticCSS = readFileSync(new URL("../rules/easylist-cosmetic.css", import.meta.url), "utf8");
+  const cookieCSS = readFileSync(new URL("../rules/easylist-cookie-cosmetic.css", import.meta.url), "utf8");
   assert.equal(rules.length, CONTENT_BLOCKER_RULE_COUNT);
   assert.equal(cosmeticCSS.split("\n").length, CONTENT_BLOCKER_COSMETIC_RULE_COUNT);
+  assert.ok(cookieCSS.split("\n").length > 10_000, "EasyList Cookie coverage is unexpectedly small");
   assert.ok(rules.every((rule) => rule.action.type === "block" && !rule.condition.resourceTypes?.includes("main_frame")));
   assert.deepEqual(contentBlockingSnapshot(true, "2026-07-14T12:00:00Z"), {
     enabled: true,

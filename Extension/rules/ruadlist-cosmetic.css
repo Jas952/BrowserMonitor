@@ -555,6 +555,7 @@ a[href^="https://msetup.pro"]{display:none!important}
 a[href^="https://relap.io/"][href*="promo_ad_link"]{display:none!important}
 a[href^="https://wcm"][href*="weborama"][href*="/fcgi-bin/dispatch.fcgi?"]{display:none!important}
 a[href^="https://www.juicer.io?referrer="]{display:none!important}
+a[href^="https://yandex.ru/project/browser/bonus/multioffer/affiliate_"]{display:none!important}
 a[onclick*="/link-fes.ru"]{display:none!important}
 a[onclick*="https://dzen.ru/news/?favid="]{display:none!important}
 a[onclick*="n284adserv.com"]{display:none!important}

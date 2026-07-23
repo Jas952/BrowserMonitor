@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browser Monitor — Feedback</title>
+  <link rel="stylesheet" href="feedback.css">
+</head>
+<body>
+  <header><img src="icons/browser-monitor-48.png" alt=""><div><h1 id="feedback-title">Send feedback</h1><p id="feedback-subtitle">Suggest a tool or report a problem</p></div></header>
+  <main>
+    <div class="type-picker" role="radiogroup" aria-label="Request type">
+      <label><input type="radio" name="feedback-type" value="feature" checked><span id="feature-type">New tool</span></label>
+      <label><input type="radio" name="feedback-type" value="bug"><span id="bug-type">Problem</span></label>
+      <label><input type="radio" name="feedback-type" value="site"><span id="site-type">Site filters</span></label>
+    </div>
+    <label class="field"><span id="email-label">Your email</span><input id="feedback-email" type="email" autocomplete="email" maxlength="254" placeholder="name@example.com"><small id="email-note" class="email-note">This email is included in the GitHub issue and may be public.</small></label>
+    <label class="field"><span id="message-label">Describe your request</span><textarea id="feedback-message" rows="8" maxlength="5000" required></textarea><small id="message-limit">0 / 5000</small></label>
+    <div class="attachment">
+      <div><strong id="attachment-title">Screenshot</strong><p id="attachment-detail">PNG, JPEG or WebP up to 2 MB. It stays local until you attach it in GitHub.</p></div>
+      <button id="choose-feedback-image" type="button">Choose image</button>
+      <input id="feedback-image" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+    </div>
+    <div id="attachment-preview" class="attachment-preview" hidden><img alt=""><span></span><button type="button" aria-label="Remove attachment">×</button></div>
+    <p id="feedback-status" class="status" role="status" aria-live="polite"></p>
+  </main>
+  <footer><p id="delivery-note">Sending opens a pre-filled GitHub issue. Nothing is sent silently; you review and submit it there.</p><button id="send-feedback" type="button">Continue to send</button></footer>
+  <script type="module" src="feedback.js"></script>
+</body>
+</html>

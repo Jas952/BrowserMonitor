@@ -14,11 +14,12 @@
       </div>
       <nav role="tablist" aria-label="Settings sections">
         <button class="nav-tab active" type="button" role="tab" aria-selected="true" data-section-target="general"><span class="nav-icon">◈</span><span data-i18n="navGeneral">General</span></button>
-        <button class="nav-tab" type="button" role="tab" aria-selected="false" data-section-target="filters"><span class="nav-icon">A</span><span data-i18n="navFilters">Filters</span></button>
-        <button class="nav-tab" type="button" role="tab" aria-selected="false" data-section-target="page-elements"><span class="nav-icon">○</span><span data-i18n="navPageElements">Page elements</span></button>
+        <button class="nav-tab" type="button" role="tab" aria-selected="false" data-section-target="protection"><span class="nav-icon">A</span><span data-i18n="navProtectionCenter">Protection</span></button>
+        <button class="nav-tab" type="button" role="tab" aria-selected="false" data-section-target="privacy"><span class="nav-icon">!</span><span data-i18n="navPrivacyTools">Privacy</span></button>
         <button class="nav-tab" type="button" role="tab" aria-selected="false" data-section-target="appearance"><span class="nav-icon">◇</span><span data-i18n="navAppearance">Appearance</span></button>
-        <button class="nav-tab" type="button" role="tab" aria-selected="false" data-section-target="rules"><span class="nav-icon">⌁</span><span data-i18n="navRules">Custom rules</span></button>
+        <button class="nav-tab" type="button" role="tab" aria-selected="false" data-section-target="rules"><span class="nav-icon">⌁</span><span data-i18n="navRules">Advanced rules</span></button>
         <button class="nav-tab" type="button" role="tab" aria-selected="false" data-section-target="data"><span class="nav-icon">□</span><span data-i18n="navData">Data</span></button>
+        <button class="nav-tab" type="button" role="tab" aria-selected="false" data-section-target="feedback"><span class="nav-icon">✦</span><span data-i18n="navFeedback">Feedback</span></button>
       </nav>
       <div class="language-picker">
         <label for="language-select" data-i18n="language">Language</label>
@@ -49,9 +50,11 @@
         </div>
       </section>
 
-      <section id="filters" class="settings-section settings-panel" role="tabpanel" hidden>
-        <div class="section-intro"><div><h2 data-i18n="sectionFilters">Filters</h2><p data-i18n="sectionFiltersDescription"></p></div></div>
-        <div class="setting-grid">
+      <section id="protection" class="settings-section settings-panel" role="tabpanel" hidden>
+        <div class="section-intro"><div><h2 data-i18n="sectionProtectionCenter">Protection</h2><p data-i18n="sectionProtectionCenterDescription"></p></div></div>
+        <div class="settings-cluster">
+          <div class="cluster-heading"><h3 data-i18n="filterListsGroup">Filter lists</h3><p data-i18n="filterListsGroupDescription"></p></div>
+          <div class="setting-grid">
           <article class="setting-card"><div class="setting-icon">A</div><div class="setting-copy"><h3 data-i18n="easyList"></h3><p data-i18n="easyListDescription"></p></div><label class="switch"><input data-setting="adFilterEnabled" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">P</div><div class="setting-copy"><h3 data-i18n="easyPrivacy"></h3><p data-i18n="easyPrivacyDescription"></p></div><label class="switch"><input data-setting="privacyFilterEnabled" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">₿</div><div class="setting-copy"><h3 data-i18n="crypto"></h3><p data-i18n="cryptoDescription"></p></div><label class="switch"><input data-setting="cryptominingProtectionEnabled" type="checkbox"><span></span></label></article>
@@ -59,18 +62,52 @@
           <article class="setting-card"><div class="setting-icon">RU</div><div class="setting-copy"><h3 data-i18n="russianFilters"></h3><p data-i18n="russianFiltersDescription"></p></div><label class="switch"><input data-setting="regionalRussianFilteringEnabled" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">@</div><div class="setting-copy"><h3 data-i18n="socialFilters"></h3><p data-i18n="socialFiltersDescription"></p></div><label class="switch"><input data-setting="socialWidgetBlockingEnabled" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">!</div><div class="setting-copy"><h3 data-i18n="warningFilters"></h3><p data-i18n="warningFiltersDescription"></p></div><label class="switch"><input data-setting="antiAdblockMessageBlockingEnabled" type="checkbox"><span></span></label></article>
+          </div>
         </div>
-      </section>
 
-      <section id="page-elements" class="settings-section settings-panel" role="tabpanel" hidden>
-        <div class="section-intro"><div><h2 data-i18n="sectionPageElements"></h2><p data-i18n="sectionPageElementsDescription"></p></div></div>
-        <div class="setting-grid">
+        <div class="settings-cluster">
+          <div class="cluster-heading"><h3 data-i18n="pageCleanupGroup">Page cleanup</h3><p data-i18n="pageCleanupGroupDescription"></p></div>
+          <div class="setting-grid">
           <article class="setting-card"><div class="setting-icon">✓</div><div class="setting-copy"><h3 data-i18n="cookieBanners"></h3><p data-i18n="cookieBannersDescription"></p></div><label class="switch"><input data-setting="cookieBannerBlockingEnabled" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">✉</div><div class="setting-copy"><h3 data-i18n="newsletters"></h3><p data-i18n="newslettersDescription"></p></div><label class="switch"><input data-setting="newsletterBlockingEnabled" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">?</div><div class="setting-copy"><h3 data-i18n="surveys"></h3><p data-i18n="surveysDescription"></p></div><label class="switch"><input data-setting="surveyBlockingEnabled" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">◌</div><div class="setting-copy"><h3 data-i18n="notificationPrompts"></h3><p data-i18n="notificationPromptsDescription"></p></div><label class="switch"><input data-setting="notificationPromptBlockingEnabled" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">▶</div><div class="setting-copy"><h3 data-i18n="autoplay"></h3><p data-i18n="autoplayDescription"></p></div><label class="switch"><input data-setting="autoplayBlockingEnabled" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">▣</div><div class="setting-copy"><h3 data-i18n="floatingVideo"></h3><p data-i18n="floatingVideoDescription"></p></div><label class="switch"><input data-setting="floatingVideoBlockingEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">▷</div><div class="setting-copy"><h3 data-i18n="videoAdProtection"></h3><p data-i18n="videoAdProtectionDescription"></p></div><label class="switch"><input data-setting="videoAdProtectionEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">≫</div><div class="setting-copy"><h3 data-i18n="sponsorSkipping"></h3><p data-i18n="sponsorSkippingDescription"></p></div><label class="switch"><input data-setting="sponsorSegmentSkippingEnabled" type="checkbox"><span></span></label></article>
+          </div>
+        </div>
+      </section>
+
+      <section id="privacy" class="settings-section settings-panel" role="tabpanel" hidden>
+        <div class="section-intro"><div><h2 data-i18n="sectionPrivacyTools">Privacy</h2><p data-i18n="sectionPrivacyToolsDescription"></p></div></div>
+        <div class="settings-cluster">
+          <div class="cluster-heading"><h3 data-i18n="sectionLinkSafety">Link safety</h3><p data-i18n="sectionLinkSafetyDescription"></p></div>
+          <div class="setting-grid">
+          <article class="setting-card featured"><div class="setting-icon">!</div><div class="setting-copy"><h3 data-i18n="linkSafetyEnabled"></h3><p data-i18n="linkSafetyEnabledDescription"></p></div><label class="switch"><input data-link-safety-setting="enabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">↪</div><div class="setting-copy"><h3 data-i18n="warnShorteners"></h3><p data-i18n="warnShortenersDescription"></p></div><label class="switch"><input data-link-safety-setting="warnShorteners" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">≋</div><div class="setting-copy"><h3 data-i18n="warnLookalikes"></h3><p data-i18n="warnLookalikesDescription"></p></div><label class="switch"><input data-link-safety-setting="warnLookalikes" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">xn</div><div class="setting-copy"><h3 data-i18n="warnPunycode"></h3><p data-i18n="warnPunycodeDescription"></p></div><label class="switch"><input data-link-safety-setting="warnPunycode" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">?</div><div class="setting-copy"><h3 data-i18n="warnRedirects"></h3><p data-i18n="warnRedirectsDescription"></p></div><label class="switch"><input data-link-safety-setting="warnRedirects" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">@</div><div class="setting-copy"><h3 data-i18n="warnUnknownFromSocial"></h3><p data-i18n="warnUnknownFromSocialDescription"></p></div><label class="switch"><input data-link-safety-setting="warnUnknownFromSocial" type="checkbox"><span></span></label></article>
+          </div>
+          <div class="rule-grid">
+            <label class="editor-card"><strong data-i18n="linkSafetyAllowedDomains"></strong><span data-i18n="linkSafetyAllowedDomainsDescription"></span><textarea id="linkSafetyAllowedDomains" rows="5" spellcheck="false"></textarea></label>
+            <label class="editor-card"><strong data-i18n="linkSafetyBlockedDomains"></strong><span data-i18n="linkSafetyBlockedDomainsDescription"></span><textarea id="linkSafetyBlockedDomains" rows="5" spellcheck="false"></textarea></label>
+          </div>
+          <div class="section-actions"><button id="save-link-safety" class="primary-button" data-i18n="saveLinkSafety"></button></div>
+        </div>
+
+        <div class="settings-cluster">
+          <div class="cluster-heading"><h3 data-i18n="sectionHistoryPrivacy">History filter</h3><p data-i18n="sectionHistoryPrivacyDescription"></p></div>
+          <div class="setting-grid compact-grid">
+            <article class="setting-card featured"><div class="setting-icon">H</div><div class="setting-copy"><h3 data-i18n="historyPrivacyEnabled"></h3><p data-i18n="historyPrivacyEnabledDescription"></p></div><label class="switch"><input id="historyPrivacyEnabled" type="checkbox"><span></span></label></article>
+          </div>
+          <div class="rule-grid single-grid">
+            <label class="editor-card"><strong data-i18n="historyPrivacyDomains"></strong><span data-i18n="historyPrivacyDomainsDescription"></span><textarea id="historyPrivacyDomains" rows="7" spellcheck="false"></textarea></label>
+          </div>
+          <div class="section-actions"><button id="save-history-privacy" class="primary-button" data-i18n="saveHistoryPrivacy"></button><button id="purge-history-privacy" class="secondary-button" data-i18n="purgeHistoryPrivacy"></button></div>
         </div>
       </section>
 
@@ -114,6 +151,13 @@
           <article class="info-card local-card"><div class="info-symbol">⌂</div><div><h3 data-i18n="localOnly"></h3><p data-i18n="localOnlyDescription"></p></div></article>
           <article class="info-card"><div class="info-symbol">↕</div><div><h3 data-i18n="backup"></h3><p data-i18n="backupDescription"></p><div class="button-row"><button id="export-settings" class="secondary-button" data-i18n="exportSettings"></button><button id="import-settings" class="secondary-button" data-i18n="importSettings"></button><button id="reset-settings" class="quiet-button danger" data-i18n="resetSettings"></button></div><input id="settings-file-input" type="file" accept="application/json" hidden></div></article>
         </div>
+      </section>
+      <section id="feedback" class="settings-section settings-panel" role="tabpanel" hidden>
+        <div class="section-intro"><div><h2 data-i18n="sectionFeedback">Feedback</h2><p data-i18n="sectionFeedbackDescription"></p></div></div>
+        <article class="info-card local-card feedback-card">
+          <div class="info-symbol">✦</div>
+          <div><h3 data-i18n="feedbackCardTitle"></h3><p data-i18n="feedbackCardDescription"></p><div class="button-row"><button id="open-feedback" class="primary-button" data-i18n="openFeedback"></button></div></div>
+        </article>
       </section>
       <div id="save-toast" role="status" aria-live="polite"></div>
     </main>

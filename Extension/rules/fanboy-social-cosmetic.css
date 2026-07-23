@@ -9710,6 +9710,7 @@ a[href^="https://facebook.com/share.php?u="]{display:none!important}
 a[href^="https://facebook.com/sharer.php?"]{display:none!important}
 a[href^="https://google.com/preferences/source?q="]{display:none!important}
 a[href^="https://news.ycombinator.com/submitlink?"]{display:none!important}
+a[href^="https://nitter.poast.org/share?"]{display:none!important}
 a[href^="https://open.sns.ymcart.com/mgr?"]{display:none!important}
 a[href^="https://partners.viadeo.com/share?"]{display:none!important}
 a[href^="https://pinterest.com/pin/create/"]{display:none!important}

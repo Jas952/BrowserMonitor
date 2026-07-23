@@ -1,6 +1,6 @@
 import { browserLanguage, localizeDocument, translate } from "./localization.js";
 
-const monitoringToggle = document.querySelector("#monitoring-toggle");
+const extensionToggle = document.querySelector("#extension-toggle");
 const summary = document.querySelector("#summary");
 const list = document.querySelector("#tab-list");
 const tabsCount = document.querySelector("#tabs-count");
@@ -22,6 +22,9 @@ const pipButton = document.querySelector("#pip-button");
 const pipStatus = document.querySelector("#pip-status");
 const cookiesButton = document.querySelector("#cookies-button");
 const blockElementButton = document.querySelector("#block-element-button");
+const statisticsButton = document.querySelector("#statistics-button");
+const headerStatisticsButton = document.querySelector("#header-statistics-button");
+const feedbackButton = document.querySelector("#feedback-button");
 const previousTabs = document.querySelector("#previous-tabs");
 const nextTabs = document.querySelector("#next-tabs");
 const tabPageLabel = document.querySelector("#tab-page-label");
@@ -52,6 +55,7 @@ const nextCookies = document.querySelector("#next-cookies");
 const cookiePageLabel = document.querySelector("#cookie-page-label");
 const cookieStatus = document.querySelector("#cookie-status");
 const settingsButton = document.querySelector("#settings-button");
+const headerActivityButton = document.querySelector("#header-activity-button");
 
 let activeTab = null;
 let latestSnapshot = null;
@@ -99,7 +103,7 @@ function closePanels() {
 
 function renderSnapshot(snapshot) {
   latestSnapshot = snapshot;
-  monitoringToggle.checked = snapshot.monitoringEnabled;
+  extensionToggle.checked = snapshot.extensionEnabled !== false;
   const heavyCount = snapshot.tabs.filter((tab) => tab.severity === "heavy" || tab.severity === "critical").length;
   const tabsLabel = snapshot.tabs.length === 1
     ? t("tabsCountOne")
@@ -107,7 +111,9 @@ function renderSnapshot(snapshot) {
   const attentionLabel = heavyCount === 1
     ? t("attentionOne")
     : t("attentionMany", { count: heavyCount });
-  summary.textContent = snapshot.monitoringEnabled
+  summary.textContent = snapshot.extensionEnabled === false
+    ? t("extensionPaused")
+    : snapshot.monitoringEnabled
     ? t("tabsSummary", { tabs: tabsLabel, attention: attentionLabel })
     : t("analysisPaused");
   tabsCount.textContent = snapshot.tabs.length;
@@ -332,7 +338,7 @@ function renderExceptions(sites) {
 function renderProtection(state) {
   latestBlockerState = state;
   const enabled = state?.enabled !== false;
-  blockerToggle.checked = enabled;
+  blockerToggle.checked = state?.contentBlockingConfigured ?? enabled;
   protectionTitle.textContent = enabled ? t("protectionOn") : t("protectionOff");
   const networkRules = formatNumber(state?.ruleCount);
   const cosmeticRules = formatNumber(state?.cosmeticRuleCount);
@@ -433,14 +439,20 @@ async function playActivationAnimationInActiveTab() {
   }
 }
 
-monitoringToggle.addEventListener("change", async () => {
-  const enabled = monitoringToggle.checked;
-  const snapshot = await chrome.runtime.sendMessage({
-    kind: "setMonitoring",
-    enabled
-  });
-  renderSnapshot(snapshot);
-  if (enabled) await playActivationAnimationInActiveTab();
+extensionToggle.addEventListener("change", async () => {
+  const enabled = extensionToggle.checked;
+  extensionToggle.disabled = true;
+  try {
+    const snapshot = await chrome.runtime.sendMessage({ kind: "setExtensionEnabled", enabled });
+    if (!snapshot || snapshot.error) throw new Error(snapshot?.error || "Extension state is unavailable");
+    renderSnapshot(snapshot);
+    if (enabled) await playActivationAnimationInActiveTab();
+  } catch {
+    extensionToggle.checked = !enabled;
+    await refresh().catch(() => {});
+  } finally {
+    extensionToggle.disabled = false;
+  }
 });
 
 blockerToggle.addEventListener("change", async () => {
@@ -561,6 +573,46 @@ exportAllCookies.addEventListener("click", () => {
 
 refreshButton.addEventListener("click", refresh);
 settingsButton.addEventListener("click", () => chrome.runtime.openOptionsPage());
+async function openActivityWindow() {
+  try {
+    await chrome.windows.create({
+      url: chrome.runtime.getURL("activity.html"),
+      type: "popup",
+      width: 1120,
+      height: 760
+    });
+  } catch {
+    await chrome.tabs.create({ url: chrome.runtime.getURL("activity.html") });
+  }
+}
+headerActivityButton.addEventListener("click", openActivityWindow);
+async function openStatisticsWindow() {
+  try {
+    await chrome.windows.create({
+      url: chrome.runtime.getURL("statistics.html"),
+      type: "popup",
+      width: 860,
+      height: 680
+    });
+  } catch {
+    await chrome.tabs.create({ url: chrome.runtime.getURL("statistics.html") });
+  }
+}
+
+statisticsButton.addEventListener("click", openStatisticsWindow);
+headerStatisticsButton.addEventListener("click", openStatisticsWindow);
+feedbackButton.addEventListener("click", async () => {
+  const params = activeTab
+    ? new URLSearchParams({ type: "site", url: activeTab.url, title: activeTab.title || "" })
+    : new URLSearchParams();
+  const query = params.toString();
+  const feedbackURL = chrome.runtime.getURL(`feedback.html${query ? `?${query}` : ""}`);
+  try {
+    await chrome.windows.create({ url: feedbackURL, type: "popup", width: 580, height: 740 });
+  } catch {
+    await chrome.tabs.create({ url: feedbackURL });
+  }
+});
 
 async function bootstrap() {
   const { uiPreferences } = await chrome.storage.local.get({ uiPreferences: { language: null, theme: "system" } });

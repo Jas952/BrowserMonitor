@@ -1,6 +1,22 @@
 import { assessTab } from "./scoring.js";
 import { cookieExportFilename, serializeCookies } from "./cookies.js";
 import { compileFilterList } from "./filter-parser.js";
+import {
+  DEFAULT_LINK_SAFETY_SETTINGS,
+  evaluateLinkSafety,
+  normalizeLinkSafetySettings,
+  parseURLParts,
+  sanitizeLinkSafetyDomains
+} from "./link-safety.js";
+import {
+  normalizeBlockingStatistics,
+  recordBlockingEvent,
+  summarizeBlockingStatistics
+} from "./statistics.js";
+import {
+  recordActivitySample,
+  summarizeActivityStatistics
+} from "./activity-statistics.js";
 import { CRYPTO_MINING_RULES } from "./rules/cryptomining-rules.js";
 import {
   CONTENT_BLOCKER_RULESET_IDS,
@@ -17,6 +33,11 @@ const CUSTOM_FILTER_FIRST_RULE_ID = 630_000;
 const CUSTOM_FILTER_RULE_LIMIT = 500;
 const CUSTOM_FILTER_COSMETIC_LIMIT = 500;
 const CUSTOM_FILTER_MAX_BYTES = 1_048_576;
+const BLOCKING_STATISTICS_KEY = "blockingStatistics";
+const ACTIVITY_STATISTICS_KEY = "siteActivityStatistics";
+const SPONSOR_CACHE_KEY = "sponsorSegmentCache";
+const SPONSOR_CACHE_LIMIT = 80;
+const SPONSOR_CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
 const DEFAULT_PROTECTION_SETTINGS = {
   cookieBannerBlockingEnabled: false,
   newsletterBlockingEnabled: false,
@@ -24,13 +45,15 @@ const DEFAULT_PROTECTION_SETTINGS = {
   notificationPromptBlockingEnabled: false,
   autoplayBlockingEnabled: false,
   floatingVideoBlockingEnabled: false,
+  videoAdProtectionEnabled: true,
+  sponsorSegmentSkippingEnabled: true,
   adFilterEnabled: true,
   privacyFilterEnabled: true,
   cosmeticFilteringEnabled: true,
   cryptominingProtectionEnabled: true,
   socialWidgetBlockingEnabled: false,
   antiAdblockMessageBlockingEnabled: false,
-  regionalRussianFilteringEnabled: false,
+  regionalRussianFilteringEnabled: true,
   imageSwapEnabled: false,
   imageSwapTheme: "landscape",
   customFilterListURLs: [],
@@ -41,13 +64,32 @@ const DEFAULT_PROTECTION_SETTINGS = {
   updatedAt: new Date(0).toISOString()
 };
 
+const DEFAULT_HISTORY_PRIVACY_SETTINGS = {
+  enabled: false,
+  domains: [],
+  updatedAt: new Date(0).toISOString()
+};
+
 const PROTECTION_BOOLEAN_KEYS = [
   "cookieBannerBlockingEnabled", "newsletterBlockingEnabled", "surveyBlockingEnabled",
   "notificationPromptBlockingEnabled", "autoplayBlockingEnabled", "floatingVideoBlockingEnabled",
+  "videoAdProtectionEnabled", "sponsorSegmentSkippingEnabled",
   "adFilterEnabled", "privacyFilterEnabled", "cosmeticFilteringEnabled",
   "cryptominingProtectionEnabled", "socialWidgetBlockingEnabled",
   "antiAdblockMessageBlockingEnabled", "regionalRussianFilteringEnabled", "imageSwapEnabled"
 ];
+
+let contentBlockingEnabledCached = true;
+let pendingBlockingEvents = [];
+let blockingStatisticsTimer = null;
+let blockingStatisticsWrite = Promise.resolve();
+let activityStatisticsWrite = Promise.resolve();
+const BLOCKING_STATISTICS_FLUSH_DELAY_MS = 2_000;
+const BLOCKING_STATISTICS_BATCH_SIZE = 500;
+
+chrome.storage.local.get({ contentBlockingEnabled: true }).then(({ contentBlockingEnabled }) => {
+  contentBlockingEnabledCached = contentBlockingEnabled !== false;
+}).catch(() => {});
 
 function sanitizedStringList(values, { limit, maximumLength, transform = (value) => value } = {}) {
   const result = [];
@@ -111,12 +153,374 @@ async function protectionSettingsStorage() {
   return sanitizeProtectionSettings(browserProtectionSettings);
 }
 
+async function extensionEnabledStorage() {
+  const { extensionEnabled } = await chrome.storage.local.get({ extensionEnabled: true });
+  return extensionEnabled !== false;
+}
+
+async function setExtensionEnabled(enabled) {
+  const previous = await extensionEnabledStorage();
+  const blocker = await blockerStorage();
+  contentBlockingEnabledCached = Boolean(enabled) && blocker.contentBlockingEnabled;
+  try {
+    await chrome.storage.local.set({
+      extensionEnabled: Boolean(enabled),
+      extensionEnabledUpdatedAt: new Date().toISOString()
+    });
+    await configureActionCount(Boolean(enabled) && blocker.contentBlockingEnabled);
+    await applyProtectionConfiguration(await protectionSettingsStorage());
+    await syncCosmeticFilteringForAllTabs();
+    return await collectSnapshot();
+  } catch (error) {
+    contentBlockingEnabledCached = previous && blocker.contentBlockingEnabled;
+    await chrome.storage.local.set({
+      extensionEnabled: previous,
+      extensionEnabledUpdatedAt: new Date().toISOString()
+    }).catch(() => {});
+    await configureActionCount(previous && blocker.contentBlockingEnabled).catch(() => {});
+    throw error;
+  }
+}
+
+async function linkSafetyStorage() {
+  const stored = await chrome.storage.local.get({
+    linkSafetySettings: DEFAULT_LINK_SAFETY_SETTINGS,
+    linkSafetyAllowedDomains: [],
+    linkSafetyBlockedDomains: []
+  });
+  return {
+    settings: normalizeLinkSafetySettings(stored.linkSafetySettings),
+    allowedDomains: sanitizeLinkSafetyDomains(stored.linkSafetyAllowedDomains),
+    blockedDomains: sanitizeLinkSafetyDomains(stored.linkSafetyBlockedDomains)
+  };
+}
+
+function normalizeHistoryPrivacySettings(input = DEFAULT_HISTORY_PRIVACY_SETTINGS) {
+  const source = input && typeof input === "object" ? input : {};
+  const updatedAt = Date.parse(source.updatedAt ?? "");
+  return {
+    enabled: source.enabled === true,
+    domains: sanitizeLinkSafetyDomains(source.domains ?? [], 500),
+    updatedAt: Number.isFinite(updatedAt) ? new Date(updatedAt).toISOString() : new Date().toISOString()
+  };
+}
+
+async function historyPrivacyStorage() {
+  const { historyPrivacySettings } = await chrome.storage.local.get({
+    historyPrivacySettings: DEFAULT_HISTORY_PRIVACY_SETTINGS
+  });
+  return normalizeHistoryPrivacySettings(historyPrivacySettings);
+}
+
+async function setHistoryPrivacySettings(partial = {}) {
+  const current = await historyPrivacyStorage();
+  const next = normalizeHistoryPrivacySettings({
+    ...current,
+    ...partial,
+    updatedAt: new Date().toISOString()
+  });
+  await chrome.storage.local.set({ historyPrivacySettings: next });
+  if (next.enabled) await purgeHistoryPrivacyDomains(next.domains);
+  await notifyHistoryPrivacyDomainsForAllTabs(next);
+  return next;
+}
+
+async function historyPermissionGranted() {
+  return chrome.permissions.contains({ permissions: ["history"] }).catch(() => false);
+}
+
+async function purgeHistoryPrivacyDomain(domain) {
+  const normalized = sanitizeLinkSafetyDomains([domain])[0];
+  if (!normalized || !await historyPermissionGranted()) return { ok: false, deleted: 0, permissionRequired: true };
+  const results = await chrome.history.search({
+    text: normalized.split(".")[0],
+    startTime: 0,
+    maxResults: 1_000
+  });
+  let deleted = 0;
+  for (const item of results) {
+    const parsed = parseURLParts(item.url);
+    if (parsed?.registrableDomain !== normalized) continue;
+    await chrome.history.deleteUrl({ url: item.url });
+    deleted += 1;
+  }
+  return { ok: true, deleted };
+}
+
+async function purgeHistoryPrivacyDomains(domains) {
+  let deleted = 0;
+  let permissionRequired = false;
+  for (const domain of sanitizeLinkSafetyDomains(domains)) {
+    const result = await purgeHistoryPrivacyDomain(domain);
+    deleted += result.deleted ?? 0;
+    permissionRequired ||= Boolean(result.permissionRequired);
+  }
+  return { ok: !permissionRequired, deleted, permissionRequired };
+}
+
+async function addHistoryPrivacyDomain(domain) {
+  const normalized = sanitizeLinkSafetyDomains([domain])[0];
+  if (!normalized) throw new Error("The domain could not be identified");
+  const current = await historyPrivacyStorage();
+  const next = await setHistoryPrivacySettings({
+    ...current,
+    domains: [...new Set([...current.domains, normalized])].sort()
+  });
+  return { ok: true, settings: next };
+}
+
+async function notifyHistoryPrivacyDomainsForTab(tabId, settings = null) {
+  const state = settings ?? await historyPrivacyStorage();
+  try {
+    await chrome.tabs.sendMessage(tabId, {
+      kind: "setHistoryPrivacyDomains",
+      enabled: state.enabled,
+      domains: state.domains
+    });
+  } catch {
+    // Pages without the content script are ignored.
+  }
+}
+
+async function notifyHistoryPrivacyDomainsForAllTabs(settings = null) {
+  const state = settings ?? await historyPrivacyStorage();
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(tabs
+    .filter((tab) => typeof tab.id === "number" && /^https?:/.test(tab.url ?? ""))
+    .map((tab) => notifyHistoryPrivacyDomainsForTab(tab.id, state)));
+}
+
+async function setLinkSafetySettings(partial) {
+  const current = await linkSafetyStorage();
+  const nextSettings = normalizeLinkSafetySettings({
+    ...current.settings,
+    ...(partial?.settings ?? {}),
+    updatedAt: new Date().toISOString()
+  });
+  const nextAllowed = partial?.allowedDomains
+    ? sanitizeLinkSafetyDomains(partial.allowedDomains)
+    : current.allowedDomains;
+  const nextBlocked = partial?.blockedDomains
+    ? sanitizeLinkSafetyDomains(partial.blockedDomains)
+    : current.blockedDomains;
+  await chrome.storage.local.set({
+    linkSafetySettings: nextSettings,
+    linkSafetyAllowedDomains: nextAllowed,
+    linkSafetyBlockedDomains: nextBlocked
+  });
+  return { settings: nextSettings, allowedDomains: nextAllowed, blockedDomains: nextBlocked };
+}
+
+function linkWarningURL(result, targetUrl, sourceUrl = "") {
+  const parameters = new URLSearchParams({
+    url: targetUrl,
+    risk: result.risk,
+    action: result.action,
+    domain: result.registrableDomain ?? "",
+    source: sourceUrl
+  });
+  for (const reason of result.reasons.slice(0, 8)) {
+    parameters.append("reason", reason.message);
+  }
+  return chrome.runtime.getURL(`link-warning.html?${parameters.toString()}`);
+}
+
+async function evaluateLinkSafetyForNavigation(message, sender) {
+  if (!await extensionEnabledStorage()) return { action: "allow", url: message.url };
+  const targetUrl = String(message.url ?? "");
+  const sourceUrl = String(message.sourceUrl ?? sender?.url ?? "");
+  const target = parseURLParts(targetUrl);
+  if (!target) return { action: "allow", url: targetUrl };
+  const state = await linkSafetyStorage();
+  const result = evaluateLinkSafety(target.href, {
+    ...state,
+    sourceUrl
+  });
+  if (!["warn", "block"].includes(result.action)) return { ...result, warningUrl: "" };
+  enqueueBlockingEvent({
+    type: "link",
+    site: parseURLParts(sourceUrl)?.registrableDomain ?? "unknown",
+    resource: result.registrableDomain ?? target.hostname
+  });
+  return {
+    ...result,
+    warningUrl: linkWarningURL(result, target.href, sourceUrl)
+  };
+}
+
+async function allowLinkSafetyDomain(domain) {
+  const parsed = parseURLParts(domain);
+  const registrableDomain = parsed?.registrableDomain ?? "";
+  if (!registrableDomain) throw new Error("The domain could not be identified");
+  const state = await linkSafetyStorage();
+  const allowedDomains = [...new Set([...state.allowedDomains, registrableDomain])].sort().slice(0, 500);
+  const blockedDomains = state.blockedDomains.filter((value) => value !== registrableDomain);
+  await chrome.storage.local.set({ linkSafetyAllowedDomains: allowedDomains, linkSafetyBlockedDomains: blockedDomains });
+  return { ok: true, domain: registrableDomain, allowedDomains, blockedDomains };
+}
+
+async function blockLinkSafetyDomain(domain) {
+  const parsed = parseURLParts(domain);
+  const registrableDomain = parsed?.registrableDomain ?? "";
+  if (!registrableDomain) throw new Error("The domain could not be identified");
+  const state = await linkSafetyStorage();
+  const blockedDomains = [...new Set([...state.blockedDomains, registrableDomain])].sort().slice(0, 500);
+  const allowedDomains = state.allowedDomains.filter((value) => value !== registrableDomain);
+  await chrome.storage.local.set({ linkSafetyAllowedDomains: allowedDomains, linkSafetyBlockedDomains: blockedDomains });
+  return { ok: true, domain: registrableDomain, allowedDomains, blockedDomains };
+}
+
+function hostnameFromURL(value) {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase().replace(/^www\./, "");
+    return /^[a-z0-9.-]+$/i.test(hostname) ? hostname : "";
+  } catch {
+    return "";
+  }
+}
+
+function enqueueBlockingEvent(event) {
+  pendingBlockingEvents.push(event);
+  if (pendingBlockingEvents.length >= BLOCKING_STATISTICS_BATCH_SIZE) {
+    void flushBlockingEvents();
+    return;
+  }
+  if (!blockingStatisticsTimer) {
+    blockingStatisticsTimer = setTimeout(
+      () => void flushBlockingEvents(),
+      BLOCKING_STATISTICS_FLUSH_DELAY_MS
+    );
+  }
+}
+
+function flushBlockingEvents() {
+  clearTimeout(blockingStatisticsTimer);
+  blockingStatisticsTimer = null;
+  const events = pendingBlockingEvents.splice(0);
+  if (events.length === 0) return blockingStatisticsWrite;
+  blockingStatisticsWrite = blockingStatisticsWrite.then(async () => {
+    const stored = await chrome.storage.local.get({ [BLOCKING_STATISTICS_KEY]: { version: 1, days: {} } });
+    let statistics = normalizeBlockingStatistics(stored[BLOCKING_STATISTICS_KEY]);
+    for (const event of events) statistics = recordBlockingEvent(statistics, event);
+    await chrome.storage.local.set({ [BLOCKING_STATISTICS_KEY]: statistics });
+  }).catch(() => {});
+  return blockingStatisticsWrite;
+}
+
+async function recordObservedNetworkBlock(details) {
+  if (!contentBlockingEnabledCached || details.error !== "net::ERR_BLOCKED_BY_CLIENT") return;
+  const resource = hostnameFromURL(details.url);
+  if (!resource || resource.endsWith(".ajay.app")) return;
+  let site = hostnameFromURL(details.initiator) || hostnameFromURL(details.documentUrl);
+  if (!site && Number.isInteger(details.tabId) && details.tabId >= 0) {
+    try {
+      site = hostnameFromURL((await chrome.tabs.get(details.tabId)).url);
+    } catch {
+      // A request may finish after its tab has closed.
+    }
+  }
+  if (!site) return;
+  enqueueBlockingEvent({ type: "network", site, resource });
+}
+
+function validYouTubeVideoID(value) {
+  const videoID = String(value ?? "");
+  return /^[A-Za-z0-9_-]{11}$/.test(videoID) ? videoID : "";
+}
+
+async function sponsorHashPrefix(videoID) {
+  const bytes = new TextEncoder().encode(videoID);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return [...digest.slice(0, 2)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function sanitizeSponsorSegments(payload, videoID) {
+  const matching = Array.isArray(payload)
+    ? payload.find((entry) => entry?.videoID === videoID)?.segments
+    : null;
+  if (!Array.isArray(matching)) return [];
+  return matching.flatMap((entry) => {
+    const start = Number(entry?.segment?.[0]);
+    const end = Number(entry?.segment?.[1]);
+    const category = ["sponsor", "selfpromo"].includes(entry?.category) ? entry.category : null;
+    if (!category || !Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) return [];
+    return [{
+      start: Math.round(start * 100) / 100,
+      end: Math.round(end * 100) / 100,
+      category,
+      uuid: String(entry.UUID ?? `${category}:${start}:${end}`).slice(0, 100)
+    }];
+  }).slice(0, 30);
+}
+
+async function getSponsorSegments(videoID) {
+  const normalizedID = validYouTubeVideoID(videoID);
+  if (!normalizedID) return [];
+  const settings = await protectionSettingsStorage();
+  if (!settings.sponsorSegmentSkippingEnabled) return [];
+  const now = Date.now();
+  const stored = await chrome.storage.local.get({ [SPONSOR_CACHE_KEY]: {} });
+  const cache = stored[SPONSOR_CACHE_KEY] && typeof stored[SPONSOR_CACHE_KEY] === "object"
+    ? stored[SPONSOR_CACHE_KEY]
+    : {};
+  if (Array.isArray(cache[normalizedID]?.segments)
+      && now - Date.parse(cache[normalizedID].updatedAt ?? "") < SPONSOR_CACHE_TTL_MS) {
+    return cache[normalizedID].segments;
+  }
+
+  const prefix = await sponsorHashPrefix(normalizedID);
+  const categories = encodeURIComponent(JSON.stringify(["sponsor", "selfpromo"]));
+  const actions = encodeURIComponent(JSON.stringify(["skip"]));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 7_000);
+  let segments = [];
+  try {
+    const response = await fetch(
+      `https://sponsor.ajay.app/api/skipSegments/${prefix}?categories=${categories}&actionTypes=${actions}`,
+      { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", signal: controller.signal }
+    );
+    if (response.status !== 404) {
+      if (!response.ok) throw new Error(`SponsorBlock HTTP ${response.status}`);
+      segments = sanitizeSponsorSegments(await response.json(), normalizedID);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+  cache[normalizedID] = { segments, updatedAt: new Date(now).toISOString() };
+  const compactCache = Object.fromEntries(
+    Object.entries(cache)
+      .sort((left, right) => Date.parse(right[1]?.updatedAt ?? "") - Date.parse(left[1]?.updatedAt ?? ""))
+      .slice(0, SPONSOR_CACHE_LIMIT)
+  );
+  await chrome.storage.local.set({ [SPONSOR_CACHE_KEY]: compactCache });
+  return segments;
+}
+
+function senderIsYouTube(sender) {
+  return ["youtube.com", "m.youtube.com", "music.youtube.com"].includes(hostnameFromURL(sender?.url));
+}
+
 async function setupContextMenus() {
   await chrome.contextMenus.removeAll();
   chrome.contextMenus.create({
     id: "browser-monitor-block-element",
-    title: "Block this element",
+    title: "Block selected element",
     contexts: ["page", "image", "video", "frame", "selection", "link"]
+  });
+  chrome.contextMenus.create({
+    id: "browser-monitor-allowlist-site",
+    title: "Exclude this site from blocking",
+    contexts: ["page", "image", "video", "frame", "selection", "link"]
+  });
+  chrome.contextMenus.create({
+    id: "browser-monitor-block-link-domain",
+    title: "Block this domain in Link Safety",
+    contexts: ["page", "link"]
+  });
+  chrome.contextMenus.create({
+    id: "browser-monitor-hide-history-domain",
+    title: "Hide this site from browser history",
+    contexts: ["page", "link"]
   });
 }
 
@@ -346,8 +750,9 @@ async function refreshCustomFilterSubscriptions(settings, { force = false, reins
   }
 
   const blocker = await blockerStorage();
+  const extensionEnabled = await extensionEnabledStorage();
   const installedRules = await installCustomSubscriptionRules(
-    blocker.contentBlockingEnabled ? candidateRules : []
+    extensionEnabled && blocker.contentBlockingEnabled ? candidateRules : []
   );
   await chrome.storage.local.set({
     customFilterSubscriptionCache: cache,
@@ -374,10 +779,13 @@ async function cleanupTemporaryPauses() {
 
 async function applyProtectionConfiguration(settings) {
   const blocker = await blockerStorage();
-  const enabledRulesets = blocker.contentBlockingEnabled
+  const extensionEnabled = await extensionEnabledStorage();
+  const effectiveContentBlockingEnabled = extensionEnabled && blocker.contentBlockingEnabled;
+  const enabledRulesets = effectiveContentBlockingEnabled
     ? [
         settings.adFilterEnabled ? "easylist" : null,
-        settings.privacyFilterEnabled ? "easyprivacy" : null
+        settings.privacyFilterEnabled ? "easyprivacy" : null,
+        settings.adFilterEnabled && settings.regionalRussianFilteringEnabled ? "ruadlist" : null
       ].filter(Boolean)
     : [];
   await chrome.declarativeNetRequest.updateEnabledRulesets({
@@ -385,10 +793,10 @@ async function applyProtectionConfiguration(settings) {
     disableRulesetIds: CONTENT_BLOCKER_RULESET_IDS.filter((id) => !enabledRulesets.includes(id))
   });
   await installAllowlistRules(settings.allowlistedSites ?? []);
-  await installCustomBlockRules(settings.customBlockedDomains ?? []);
-  await installTemporaryPauseRules(activeTemporaryPauses(blocker.temporarySitePauses));
+  await installCustomBlockRules(effectiveContentBlockingEnabled ? (settings.customBlockedDomains ?? []) : []);
+  await installTemporaryPauseRules(effectiveContentBlockingEnabled ? activeTemporaryPauses(blocker.temporarySitePauses) : {});
   await installCryptominingRules(
-    blocker.contentBlockingEnabled && settings.cryptominingProtectionEnabled
+    effectiveContentBlockingEnabled && settings.cryptominingProtectionEnabled
   );
   await refreshCustomFilterSubscriptions(settings, { reinstall: true });
   await chrome.storage.local.set({ allowlistedSites: settings.allowlistedSites ?? [] });
@@ -397,19 +805,21 @@ async function applyProtectionConfiguration(settings) {
 
 async function syncCosmeticFilteringForTab(tabId, url) {
   if (!/^https?:\/\//.test(url ?? "")) return;
+  const extensionEnabled = await extensionEnabledStorage();
   const state = await blockerStorage();
   const settings = await protectionSettingsStorage();
   const domain = normalizeSiteDomain(url);
   const activePauses = activeTemporaryPauses(state.temporarySitePauses);
-  const shouldApply = state.contentBlockingEnabled
-    && settings.cosmeticFilteringEnabled
+  const siteProtectionActive = extensionEnabled
+    && state.contentBlockingEnabled
     && !state.allowlistedSites.includes(domain)
     && !activePauses[domain];
   const styles = [
-    ["rules/easylist-cosmetic.css", true],
-    ["rules/ruadlist-cosmetic.css", settings.regionalRussianFilteringEnabled],
-    ["rules/fanboy-social-cosmetic.css", settings.socialWidgetBlockingEnabled],
-    ["rules/antiadblock-cosmetic.css", settings.antiAdblockMessageBlockingEnabled]
+    ["rules/easylist-cosmetic.css", siteProtectionActive && settings.cosmeticFilteringEnabled],
+    ["rules/easylist-cookie-cosmetic.css", siteProtectionActive && settings.cookieBannerBlockingEnabled],
+    ["rules/ruadlist-cosmetic.css", siteProtectionActive && settings.cosmeticFilteringEnabled && settings.regionalRussianFilteringEnabled],
+    ["rules/fanboy-social-cosmetic.css", siteProtectionActive && settings.cosmeticFilteringEnabled && settings.socialWidgetBlockingEnabled],
+    ["rules/antiadblock-cosmetic.css", siteProtectionActive && settings.cosmeticFilteringEnabled && settings.antiAdblockMessageBlockingEnabled]
   ];
   for (const [file, selected] of styles) {
     const injection = {
@@ -422,7 +832,7 @@ async function syncCosmeticFilteringForTab(tabId, url) {
     } catch {
       // The stylesheet is absent on first load.
     }
-    if (shouldApply && selected) {
+    if (selected) {
       try {
         await chrome.scripting.insertCSS(injection);
       } catch {
@@ -478,13 +888,14 @@ async function setSiteTemporarilyPaused(domain, durationMinutes) {
 }
 
 async function contentBlockingState(url) {
+  const extensionEnabled = await extensionEnabledStorage();
   const state = await blockerStorage();
   const settings = await protectionSettingsStorage();
   const domain = normalizeSiteDomain(url);
   const activePauses = activeTemporaryPauses(state.temporarySitePauses);
   return {
     ...contentBlockingSnapshot(
-      state.contentBlockingEnabled,
+      extensionEnabled && state.contentBlockingEnabled,
       state.contentBlockingUpdatedAt,
       {
         ...state,
@@ -493,6 +904,8 @@ async function contentBlockingState(url) {
           : (state.customFilterRuleCount ?? 0)
       }
     ),
+    extensionEnabled,
+    contentBlockingConfigured: state.contentBlockingEnabled,
     domain,
     siteAllowlisted: domain ? state.allowlistedSites.includes(domain) : false,
     sitePausedUntil: domain ? (activePauses[domain] ?? null) : null,
@@ -501,11 +914,14 @@ async function contentBlockingState(url) {
 }
 
 async function applyContentBlocking(enabled, updatedAt = new Date().toISOString()) {
+  const extensionEnabled = await extensionEnabledStorage();
+  contentBlockingEnabledCached = extensionEnabled && Boolean(enabled);
   await chrome.storage.local.set({
     contentBlockingEnabled: Boolean(enabled),
     contentBlockingUpdatedAt: updatedAt
   });
   await applyProtectionConfiguration(await protectionSettingsStorage());
+  await configureActionCount(extensionEnabled && Boolean(enabled));
   const state = await blockerStorage();
   return contentBlockingSnapshot(enabled, updatedAt, state);
 }
@@ -791,6 +1207,7 @@ async function applyEcoMode(tabId, enabled, requestedAt = new Date().toISOString
 
 export async function collectSnapshot() {
   const now = new Date().toISOString();
+  const extensionEnabled = await extensionEnabledStorage();
   const state = await chrome.storage.local.get({
     monitoringEnabled: true,
     monitoringUpdatedAt: now,
@@ -800,7 +1217,7 @@ export async function collectSnapshot() {
   const protectionSettings = await protectionSettingsStorage();
   const allTabs = await chrome.tabs.query({});
   const supportedTabs = allTabs.filter((tab) => /^https?:\/\//.test(tab.url || tab.pendingUrl || ""));
-  const reports = state.monitoringEnabled
+  const reports = extensionEnabled && state.monitoringEnabled
     ? await Promise.all(supportedTabs.map((tab) => readTab(tab, state.ecoTabs)))
     : [];
   reports.sort((left, right) => right.score - left.score);
@@ -809,14 +1226,16 @@ export async function collectSnapshot() {
     schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     browser: "Google Chrome",
+    extensionEnabled,
     monitoringEnabled: state.monitoringEnabled,
+    monitoringActive: extensionEnabled && state.monitoringEnabled,
     monitoringUpdatedAt: state.monitoringUpdatedAt,
     contentBlocking: contentBlockingSnapshot(
-      blocker.contentBlockingEnabled,
+      extensionEnabled && blocker.contentBlockingEnabled,
       blocker.contentBlockingUpdatedAt,
       {
         ...blocker,
-        additionalRuleCount: blocker.contentBlockingEnabled && protectionSettings.cryptominingProtectionEnabled
+        additionalRuleCount: extensionEnabled && blocker.contentBlockingEnabled && protectionSettings.cryptominingProtectionEnabled
           ? CRYPTO_MINING_RULES.length + (blocker.customFilterRuleCount ?? 0)
           : (blocker.customFilterRuleCount ?? 0)
       }
@@ -832,21 +1251,29 @@ export async function collectSnapshot() {
   return snapshot;
 }
 
-async function configureActionCount() {
+async function configureActionCount(enabled = true) {
   await chrome.declarativeNetRequest.setExtensionActionOptions({
-    displayActionCountAsBadgeText: true
+    displayActionCountAsBadgeText: Boolean(enabled)
   });
   await chrome.action.setBadgeBackgroundColor({ color: "#536b78" });
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.local.get([
+    "extensionEnabled",
+    "extensionEnabledUpdatedAt",
     "monitoringEnabled",
     "monitoringUpdatedAt",
     "contentBlockingEnabled",
     "contentBlockingUpdatedAt",
     "browserProtectionSettings"
   ]);
+  if (typeof current.extensionEnabled !== "boolean" || !current.extensionEnabledUpdatedAt) {
+    await chrome.storage.local.set({
+      extensionEnabled: true,
+      extensionEnabledUpdatedAt: new Date().toISOString()
+    });
+  }
   const blocker = await blockerStorage();
   const initialProtectionSettings = {
     ...DEFAULT_PROTECTION_SETTINGS,
@@ -869,16 +1296,19 @@ chrome.runtime.onInstalled.addListener(async () => {
   } else {
     await applyContentBlocking(current.contentBlockingEnabled, current.contentBlockingUpdatedAt);
   }
-  await configureActionCount();
+  await configureActionCount(await extensionEnabledStorage() && (await blockerStorage()).contentBlockingEnabled);
   await applyProtectionConfiguration(sanitizedInitialProtectionSettings);
+  await notifyHistoryPrivacyDomainsForAllTabs();
   await chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
   await setupContextMenus();
   await collectSnapshot();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  await configureActionCount();
+  contentBlockingEnabledCached = await extensionEnabledStorage() && (await blockerStorage()).contentBlockingEnabled;
+  await configureActionCount(await extensionEnabledStorage() && (await blockerStorage()).contentBlockingEnabled);
   await applyProtectionConfiguration(await protectionSettingsStorage());
+  await notifyHistoryPrivacyDomainsForAllTabs();
   await chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
   await setupContextMenus();
   await collectSnapshot();
@@ -910,17 +1340,183 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId !== "browser-monitor-block-element" || typeof tab?.id !== "number") return;
-  chrome.tabs.sendMessage(tab.id, { kind: "startElementPicker" }).catch(() => {});
-});
-
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status === "complete") {
-    await syncCosmeticFilteringForTab(tabId, tab.url);
+  if (info.menuItemId === "browser-monitor-block-element" && typeof tab?.id === "number") {
+    chrome.tabs.sendMessage(
+      tab.id,
+      { kind: "startElementPicker", useContextTarget: true },
+      Number.isInteger(info.frameId) ? { frameId: info.frameId } : undefined
+    ).catch(() => {});
+    return;
+  }
+  const pageURL = info.pageUrl || tab?.url || "";
+  if (info.menuItemId === "browser-monitor-allowlist-site" && typeof tab?.id === "number") {
+    setSiteAllowlisted(pageURL, true)
+      .then(() => chrome.tabs.reload(tab.id))
+      .catch(() => {});
+    return;
+  }
+  const targetURL = info.linkUrl || pageURL;
+  if (info.menuItemId === "browser-monitor-block-link-domain") {
+    blockLinkSafetyDomain(targetURL).catch(() => {});
+    return;
+  }
+  if (info.menuItemId === "browser-monitor-hide-history-domain") {
+    addHistoryPrivacyDomain(targetURL).catch(() => {});
+    return;
   }
 });
 
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.url && /^https?:\/\//.test(changeInfo.url)) {
+    const result = await evaluateLinkSafetyForNavigation({ url: changeInfo.url, sourceUrl: "" }, { url: "" });
+    if (result.action === "block" && result.warningUrl && !changeInfo.url.startsWith(chrome.runtime.getURL(""))) {
+      await chrome.tabs.update(tabId, { url: result.warningUrl }).catch(() => {});
+      return;
+    }
+    const historySettings = await historyPrivacyStorage();
+    if (historySettings.enabled) {
+      const domain = parseURLParts(changeInfo.url)?.registrableDomain;
+      if (domain && historySettings.domains.includes(domain)) purgeHistoryPrivacyDomain(domain).catch(() => {});
+    }
+  }
+  if (changeInfo.status === "complete") {
+    await syncCosmeticFilteringForTab(tabId, tab.url);
+    await notifyHistoryPrivacyDomainsForTab(tabId).catch(() => {});
+  }
+});
+
+chrome.webRequest.onErrorOccurred.addListener((details) => {
+  void recordObservedNetworkBlock(details);
+}, { urls: ["<all_urls>"] });
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.kind === "recordSiteActivity" && sender?.tab && /^https?:/i.test(sender.url ?? "")) {
+    const domain = hostnameFromURL(sender.url);
+    activityStatisticsWrite = activityStatisticsWrite.then(async () => {
+      const stored = await chrome.storage.local.get({ [ACTIVITY_STATISTICS_KEY]: { version: 1, days: {} } });
+      const updated = recordActivitySample(stored[ACTIVITY_STATISTICS_KEY], message, domain);
+      await chrome.storage.local.set({ [ACTIVITY_STATISTICS_KEY]: updated });
+    });
+    activityStatisticsWrite.then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  if (message?.kind === "getSiteActivityStatistics") {
+    activityStatisticsWrite.then(async () => {
+      const stored = await chrome.storage.local.get({ [ACTIVITY_STATISTICS_KEY]: { version: 1, days: {} } });
+      sendResponse(summarizeActivityStatistics(stored[ACTIVITY_STATISTICS_KEY], message.period));
+    });
+    return true;
+  }
+  if (message?.kind === "clearSiteActivityStatistics") {
+    activityStatisticsWrite = activityStatisticsWrite.then(() => chrome.storage.local.set({
+      [ACTIVITY_STATISTICS_KEY]: { version: 1, days: {} }
+    }));
+    activityStatisticsWrite.then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (message?.kind === "getBlockingStatistics") {
+    flushBlockingEvents().then(async () => {
+      const stored = await chrome.storage.local.get({ [BLOCKING_STATISTICS_KEY]: { version: 1, days: {} } });
+      sendResponse(summarizeBlockingStatistics(stored[BLOCKING_STATISTICS_KEY]));
+    });
+    return true;
+  }
+  if (message?.kind === "clearBlockingStatistics") {
+    pendingBlockingEvents = [];
+    clearTimeout(blockingStatisticsTimer);
+    blockingStatisticsTimer = null;
+    blockingStatisticsWrite = blockingStatisticsWrite.then(() => chrome.storage.local.set({
+      [BLOCKING_STATISTICS_KEY]: { version: 1, days: {} }
+    }));
+    blockingStatisticsWrite.then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (message?.kind === "getSponsorSegments") {
+    if (!senderIsYouTube(sender)) {
+      sendResponse({ segments: [] });
+      return false;
+    }
+    getSponsorSegments(message.videoId)
+      .then((segments) => sendResponse({ segments }))
+      .catch(() => sendResponse({ segments: [] }));
+    return true;
+  }
+  if (message?.kind === "recordSponsorSegmentSkip" && senderIsYouTube(sender)) {
+    enqueueBlockingEvent({
+      type: "sponsor",
+      site: "youtube.com",
+      resource: message.category === "selfpromo" ? "youtube:self-promotion" : "youtube:sponsor"
+    });
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message?.kind === "recordVideoAdAction" && sender?.tab && /^https?:/.test(sender.url ?? "")) {
+    const site = hostnameFromURL(sender.url);
+    if (site) enqueueBlockingEvent({ type: "video", site, resource: `${site}:video-ad` });
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message?.kind === "evaluateLinkSafety") {
+    evaluateLinkSafetyForNavigation(message, sender)
+      .then(sendResponse)
+      .catch(() => sendResponse({ action: "allow", url: message.url }));
+    return true;
+  }
+  if (message?.kind === "setExtensionEnabled") {
+    setExtensionEnabled(Boolean(message.enabled))
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error?.message ?? "Extension state could not be changed" }));
+    return true;
+  }
+  if (message?.kind === "getLinkSafetySettings") {
+    linkSafetyStorage().then(sendResponse).catch((error) => {
+      sendResponse({ error: error?.message ?? "Link Safety settings are unavailable" });
+    });
+    return true;
+  }
+  if (message?.kind === "setLinkSafetySettings") {
+    setLinkSafetySettings(message)
+      .then((state) => sendResponse({ ok: true, ...state }))
+      .catch((error) => sendResponse({ ok: false, error: error?.message ?? "Link Safety settings could not be saved" }));
+    return true;
+  }
+  if (message?.kind === "allowLinkSafetyDomain") {
+    allowLinkSafetyDomain(message.domain)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: error?.message ?? "The domain could not be allowed" }));
+    return true;
+  }
+  if (message?.kind === "blockLinkSafetyDomain") {
+    blockLinkSafetyDomain(message.domain)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: error?.message ?? "The domain could not be blocked" }));
+    return true;
+  }
+  if (message?.kind === "getHistoryPrivacySettings") {
+    historyPrivacyStorage().then(sendResponse).catch((error) => {
+      sendResponse({ error: error?.message ?? "History privacy settings are unavailable" });
+    });
+    return true;
+  }
+  if (message?.kind === "setHistoryPrivacySettings") {
+    setHistoryPrivacySettings(message.settings ?? {})
+      .then((settings) => sendResponse({ ok: true, settings }))
+      .catch((error) => sendResponse({ ok: false, error: error?.message ?? "History privacy settings could not be saved" }));
+    return true;
+  }
+  if (message?.kind === "addHistoryPrivacyDomain") {
+    addHistoryPrivacyDomain(message.domain)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: error?.message ?? "The domain could not be added" }));
+    return true;
+  }
+  if (message?.kind === "purgeHistoryPrivacyDomains") {
+    historyPrivacyStorage()
+      .then((settings) => purgeHistoryPrivacyDomains(settings.domains))
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: error?.message ?? "History could not be cleaned" }));
+    return true;
+  }
   if (message?.kind === "collectNow") {
     collectSnapshot().then(sendResponse);
     return true;
@@ -1009,11 +1605,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.kind === "getOptionsState") {
     Promise.all([
+      extensionEnabledStorage(),
       blockerStorage(),
-      chrome.storage.local.get({ monitoringEnabled: true })
-    ]).then(([blocker, state]) => sendResponse({
+      chrome.storage.local.get({ monitoringEnabled: true }),
+      linkSafetyStorage(),
+      historyPrivacyStorage()
+    ]).then(([extensionEnabled, blocker, state, linkSafety, historyPrivacy]) => sendResponse({
+      extensionEnabled,
       contentBlockingEnabled: blocker.contentBlockingEnabled,
-      monitoringEnabled: state.monitoringEnabled
+      monitoringEnabled: state.monitoringEnabled,
+      linkSafety,
+      historyPrivacy
     })).catch((error) => sendResponse({ error: error?.message ?? "Settings state is unavailable" }));
     return true;
   }
@@ -1027,8 +1629,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       await chrome.storage.local.set({
         browserProtectionSettings,
         allowlistedSites: browserProtectionSettings.allowlistedSites,
+        extensionEnabled: payload.extensionEnabled !== false,
+        extensionEnabledUpdatedAt: new Date().toISOString(),
         monitoringEnabled: payload.monitoringEnabled !== false,
-        monitoringUpdatedAt: new Date().toISOString()
+        monitoringUpdatedAt: new Date().toISOString(),
+        linkSafetySettings: normalizeLinkSafetySettings(payload.linkSafety?.settings),
+        linkSafetyAllowedDomains: sanitizeLinkSafetyDomains(payload.linkSafety?.allowedDomains),
+        linkSafetyBlockedDomains: sanitizeLinkSafetyDomains(payload.linkSafety?.blockedDomains),
+        historyPrivacySettings: normalizeHistoryPrivacySettings(payload.historyPrivacy)
       });
       await applyContentBlocking(payload.contentBlockingEnabled !== false);
       await applyProtectionConfiguration(browserProtectionSettings);
@@ -1042,13 +1650,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       await chrome.storage.local.set({
         browserProtectionSettings,
         allowlistedSites: [],
+        extensionEnabled: true,
+        extensionEnabledUpdatedAt: new Date().toISOString(),
         temporarySitePauses: {},
         monitoringEnabled: true,
         monitoringUpdatedAt: new Date().toISOString(),
         filterSubscriptions: [],
         customFilterSubscriptionCache: {},
         customFilterSubscriptionURLs: [],
-        customSubscriptionCosmeticFilters: []
+        customSubscriptionCosmeticFilters: [],
+        linkSafetySettings: normalizeLinkSafetySettings({ updatedAt: new Date().toISOString() }),
+        linkSafetyAllowedDomains: [],
+        linkSafetyBlockedDomains: [],
+        historyPrivacySettings: normalizeHistoryPrivacySettings({ updatedAt: new Date().toISOString() })
       });
       await applyContentBlocking(true);
       await applyProtectionConfiguration(browserProtectionSettings);
@@ -1058,7 +1672,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.kind === "addCustomCosmeticFilter") {
     const selector = String(message.selector ?? "").trim();
-    if (!selector || selector.length > 500) {
+    const domain = normalizeSiteDomain(sender?.url);
+    const storedSelector = domain ? `${domain}##${selector}` : "";
+    if (!selector || !domain || storedSelector.length > 500) {
       sendResponse({ ok: false, error: "The selected element could not be saved" });
       return false;
     }
@@ -1066,7 +1682,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(async (current) => {
         const customCosmeticFilters = [...new Set([
           ...(current.customCosmeticFilters ?? []),
-          selector
+          storedSelector
         ])].slice(-200);
         const browserProtectionSettings = {
           ...current,
@@ -1074,9 +1690,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           updatedAt: new Date().toISOString()
         };
         await chrome.storage.local.set({ browserProtectionSettings });
-        sendResponse({ ok: true, selector });
+        await syncCosmeticFilteringForAllTabs();
+        sendResponse({ ok: true, selector: storedSelector });
       })
       .catch((error) => sendResponse({ ok: false, error: error?.message ?? "The filter could not be saved" }));
+    return true;
+  }
+  if (message?.kind === "removeCustomCosmeticFilter") {
+    const selector = String(message.selector ?? "").trim();
+    protectionSettingsStorage()
+      .then(async (current) => {
+        const customCosmeticFilters = (current.customCosmeticFilters ?? []).filter((value) => value !== selector);
+        const browserProtectionSettings = {
+          ...current,
+          customCosmeticFilters,
+          updatedAt: new Date().toISOString()
+        };
+        await chrome.storage.local.set({ browserProtectionSettings });
+        await syncCosmeticFilteringForAllTabs();
+        sendResponse({ ok: true, selector });
+      })
+      .catch((error) => sendResponse({ ok: false, error: error?.message ?? "The filter could not be removed" }));
+    return true;
+  }
+  if (message?.kind === "clearCustomCosmeticFilters") {
+    protectionSettingsStorage()
+      .then(async (current) => {
+        const browserProtectionSettings = {
+          ...current,
+          customCosmeticFilters: [],
+          updatedAt: new Date().toISOString()
+        };
+        await chrome.storage.local.set({ browserProtectionSettings });
+        await syncCosmeticFilteringForAllTabs();
+        sendResponse({ ok: true });
+      })
+      .catch((error) => sendResponse({ ok: false, error: error?.message ?? "The filters could not be removed" }));
     return true;
   }
   if (message?.kind === "getCookieExportText") {
