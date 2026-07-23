@@ -1,6 +1,6 @@
 import { CONTENT_BLOCKER_METADATA } from "./blocker-metadata.js";
 
-export const CONTENT_BLOCKER_RULESET_IDS = ["easylist", "easyprivacy"];
+export const CONTENT_BLOCKER_RULESET_IDS = ["easylist", "easyprivacy", "ruadlist"];
 export const CONTENT_BLOCKER_RULE_COUNT = CONTENT_BLOCKER_METADATA.networkRuleCount;
 export const CONTENT_BLOCKER_COSMETIC_RULE_COUNT = CONTENT_BLOCKER_METADATA.cosmeticRuleCount;
 

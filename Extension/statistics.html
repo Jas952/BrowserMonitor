@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Browser Monitor — Blocking activity</title>
+    <link rel="stylesheet" href="statistics.css">
+  </head>
+  <body>
+    <header class="window-header">
+      <div class="brand">
+        <img src="icons/browser-monitor-48.png" alt="">
+        <div><h1 data-i18n="statisticsTitle">Blocking activity</h1><p data-i18n="statisticsDescription">A private, local view of Browser Monitor protection.</p></div>
+      </div>
+      <div class="live-state"><i></i><span data-i18n="liveUpdates">Live updates</span><time id="updated-at">—</time></div>
+    </header>
+
+    <main>
+      <section class="summary-grid" aria-label="Summary">
+        <article class="summary-card primary"><span data-i18n="blockedToday">Blocked today</span><strong id="today-total">0</strong><p id="today-breakdown">—</p></article>
+        <article class="summary-card"><span data-i18n="blockedSevenDays">Last 7 days</span><strong id="seven-day-total">0</strong><p data-i18n="rollingWindow">Rolling local window</p></article>
+        <article class="summary-card compact"><span data-i18n="networkRequests">Network</span><strong id="network-total">0</strong></article>
+        <article class="summary-card compact"><span data-i18n="videoAndSponsors">Video + sponsors</span><strong id="video-total">0</strong></article>
+      </section>
+
+      <section class="chart-card">
+        <div class="section-title"><div><h2 data-i18n="sevenDayActivity">Seven-day activity</h2><p data-i18n="sevenDayActivityDescription">Blocked requests and recognized video interruptions.</p></div></div>
+        <div id="activity-chart" class="activity-chart" aria-label="Seven-day blocking chart"></div>
+      </section>
+
+      <section class="list-grid">
+        <article class="list-card">
+          <div class="section-title"><div><h2 data-i18n="topBlockedSites">Top sites</h2><p data-i18n="topBlockedSitesDescription">Pages where protection was most active.</p></div><span id="site-count">0</span></div>
+          <ol id="top-sites" class="ranked-list"></ol>
+          <p id="top-sites-empty" class="empty" data-i18n="noBlockingActivity">No blocking activity yet.</p>
+        </article>
+        <article class="list-card">
+          <div class="section-title"><div><h2 data-i18n="blockedResources">Blocked resources</h2><p data-i18n="blockedResourcesDescription">Domains and video categories stopped by protection.</p></div><span id="resource-count">0</span></div>
+          <ol id="blocked-resources" class="ranked-list"></ol>
+          <p id="resources-empty" class="empty" data-i18n="noBlockedResources">Blocked resources will appear here.</p>
+        </article>
+      </section>
+    </main>
+
+    <footer>
+      <p data-i18n="statisticsPrivacy">Only seven days of compact counters are kept locally. Full page URLs are not stored; SponsorBlock results may cache a YouTube video ID for up to 12 hours.</p>
+      <button id="clear-statistics" type="button" data-i18n="clearStatistics">Clear statistics</button>
+    </footer>
+    <script type="module" src="statistics-page.js"></script>
+  </body>
+</html>

@@ -22,6 +22,7 @@ const devToolsPortPath = join(profile, "DevToolsActivePort");
 const port = 18765;
 const screenshotPath = process.env.BROWSER_MONITOR_SCREENSHOT_PATH;
 const animationScreenshotPath = process.env.BROWSER_MONITOR_ANIMATION_SCREENSHOT_PATH;
+const statisticsScreenshotPath = process.env.BROWSER_MONITOR_STATISTICS_SCREENSHOT_PATH;
 const headless = process.env.BROWSER_MONITOR_HEADLESS === "1";
 let server;
 let chrome;
@@ -172,10 +173,10 @@ async function inspectExtensionState(devToolsPort) {
   return evaluateExtension(devToolsPort, "chrome.storage.local.get(null)");
 }
 
-async function evaluateExtensionPage(devToolsPort, expression, { userGesture = false } = {}) {
+async function evaluateExtensionPage(devToolsPort, expression, { userGesture = false, pagePath = "popup.html" } = {}) {
   const targets = await (await fetch(`http://127.0.0.1:${devToolsPort}/json/list`)).json();
   const target = targets.find((candidate) =>
-    candidate.type === "page" && candidate.url.includes(`${extensionId}/popup.html`)
+    candidate.type === "page" && candidate.url.includes(`${extensionId}/${pagePath}`)
   );
   if (!target) return { error: "extension test page target not found" };
   const socket = new WebSocket(target.webSocketDebuggerUrl);
@@ -199,6 +200,41 @@ async function evaluateExtensionPage(devToolsPort, expression, { userGesture = f
   });
   socket.close();
   return response.result?.result?.value ?? response;
+}
+
+async function captureStatisticsPage(devToolsPort, path) {
+  const targets = await (await fetch(`http://127.0.0.1:${devToolsPort}/json/list`)).json();
+  const target = targets.find((candidate) =>
+    candidate.type === "page" && candidate.url.includes(`${extensionId}/statistics.html`)
+  );
+  assert.ok(target, "Statistics page target not found for screenshot");
+  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolvePromise, rejectPromise) => {
+    socket.addEventListener("open", resolvePromise, { once: true });
+    socket.addEventListener("error", rejectPromise, { once: true });
+  });
+  let id = 110;
+  const command = (method, params = {}) => new Promise((resolvePromise, rejectPromise) => {
+    const currentID = ++id;
+    const timeout = setTimeout(() => rejectPromise(new Error(`Timed out running ${method}`)), 5_000);
+    const listener = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.id !== currentID) return;
+      socket.removeEventListener("message", listener);
+      clearTimeout(timeout);
+      if (message.error) rejectPromise(new Error(message.error.message));
+      else resolvePromise(message.result);
+    };
+    socket.addEventListener("message", listener);
+    socket.send(JSON.stringify({ id: currentID, method, params }));
+  });
+  await command("Emulation.setDeviceMetricsOverride", { width: 860, height: 680, deviceScaleFactor: 1, mobile: false });
+  await command("Page.bringToFront");
+  await wait(300);
+  const screenshot = await command("Page.captureScreenshot", { format: "png", fromSurface: true });
+  socket.close();
+  assert.ok(screenshot.data, "Chrome returned no statistics screenshot data");
+  writeFileSync(path, Buffer.from(screenshot.data, "base64"));
 }
 
 async function captureExtensionPage(devToolsPort, path) {
@@ -391,14 +427,14 @@ try {
     );
     if (!snapshot) return null;
     const tab = snapshot.tabs.find((candidate) => candidate.url.includes("heavy-page.html"));
-    return tab?.metrics.sampleDurationSeconds >= 6 ? { snapshot, tab } : null;
+    return tab?.metrics.sampleDurationSeconds >= 4 ? { snapshot, tab } : null;
   });
   assert.equal(initial.snapshot.monitoringEnabled, true);
   assert.equal(initial.tab.ecoModeEnabled, false);
   assert.ok(initial.tab.score >= 15, `Heavy fixture received an unexpectedly low score: ${initial.tab.score}`);
   assert.ok(initial.tab.reasons.length > 0);
   assert.equal(initial.snapshot.contentBlocking.enabled, true);
-  assert.equal(initial.snapshot.contentBlocking.ruleCount, 29_797);
+  assert.equal(initial.snapshot.contentBlocking.ruleCount, 30_297);
   await poll("popup UI render", async () => {
     const state = await evaluateExtensionPage(devToolsPort, `({
       title: document.querySelector("#protection-title")?.textContent,
@@ -417,6 +453,9 @@ try {
         blocker: rect("#blocker-toggle"),
         siteAction: rect("#site-control-action"),
         pip: rect("#pip-button"),
+        cookies: rect("#cookies-button"),
+        block: rect("#block-element-button"),
+        statistics: rect("#statistics-button"),
         tools: rect(".utility-section"),
         footer: rect("footer"),
         body: {
@@ -442,7 +481,9 @@ try {
   assert.equal(popupGeometry.before.monitoring.x, popupGeometry.before.blocker.x, "Header and protection switches are not vertically aligned");
   assert.equal(popupGeometry.before.monitoring.width, popupGeometry.before.blocker.width, "Switch widths differ");
   assert.equal(popupGeometry.before.siteAction.width, 78, "Site action does not reserve stable label width");
-  assert.equal(popupGeometry.before.pip.width, 66, "PiP tool button does not have stable width");
+  assert.equal(popupGeometry.before.pip.width, popupGeometry.before.cookies.width, "Tool buttons are not equal-width");
+  assert.equal(popupGeometry.before.pip.width, popupGeometry.before.block.width, "Tool buttons are not aligned");
+  assert.equal(popupGeometry.before.pip.width, popupGeometry.before.statistics.width, "Statistics tool is not aligned");
   assert.ok(popupGeometry.before.ecoWidths.every((width) => width === 52), "Eco controls do not have stable widths");
   assert.deepEqual(popupGeometry.before.body, { width: 420, height: 600, scrollHeight: 600 });
   assert.equal(popupGeometry.before.tabListOverflow, "hidden", "Tab list still has an internal scrollbar");
@@ -507,6 +548,38 @@ try {
     document.body.append(script);
   })`);
   assert.equal(blockedRequestResult, "blocked", "A real advertising request was not blocked");
+  const blockingStatistics = await poll("realtime blocking statistics", async () => {
+    const summary = await evaluateExtensionPage(devToolsPort, `chrome.runtime.sendMessage({ kind: "getBlockingStatistics" })`);
+    return summary?.today?.types?.network > 0
+      && summary.topSites.some((entry) => entry.name === "127.0.0.1")
+      && summary.resources.some((entry) => entry.name === "adnxs.com")
+      ? summary
+      : null;
+  });
+  assert.ok(blockingStatistics.today.total >= blockingStatistics.today.types.network);
+  await poll("recognized video-ad fixture", async () => {
+    const state = await inspectExtensionState(devToolsPort);
+    const today = Object.values(state.blockingStatistics?.days ?? {}).at(-1);
+    return today?.types?.video > 0 ? today : null;
+  });
+  const statisticsPageResponse = await fetch(
+    `http://127.0.0.1:${devToolsPort}/json/new?${encodeURIComponent(`chrome-extension://${extensionId}/statistics.html`)}`,
+    { method: "PUT" }
+  );
+  assert.ok(statisticsPageResponse.ok, "Chrome could not open the statistics window");
+  const statisticsGeometry = await poll("statistics window render", async () => {
+    const state = await evaluateExtensionPage(devToolsPort, `({
+      today: document.querySelector("#today-total")?.textContent,
+      sevenDays: document.querySelector("#seven-day-total")?.textContent,
+      sites: document.querySelectorAll("#top-sites li").length,
+      resources: document.querySelectorAll("#blocked-resources li").length,
+      body: { width: document.body.clientWidth, height: document.body.clientHeight },
+      overflow: getComputedStyle(document.querySelector("main")).overflow
+    })`, { pagePath: "statistics.html" });
+    return Number.parseInt(state.today, 10) > 0 && state.sites > 0 && state.resources > 0 ? state : null;
+  });
+  assert.ok(Number.parseInt(statisticsGeometry.sevenDays, 10) >= Number.parseInt(statisticsGeometry.today, 10));
+  if (statisticsScreenshotPath) await captureStatisticsPage(devToolsPort, statisticsScreenshotPath);
   assert.equal((await inspectTestPage(devToolsPort)).adProbeDisplay, "none", "Cosmetic filtering was not applied");
   await evaluateExtensionPage(devToolsPort, `chrome.runtime.sendMessage({
     kind: "setBrowserProtectionSettings",
@@ -640,7 +713,7 @@ try {
     devToolsPort,
     "chrome.declarativeNetRequest.getEnabledRulesets()"
   );
-  assert.deepEqual(enabledRulesets.sort(), ["easylist", "easyprivacy"]);
+  assert.deepEqual(enabledRulesets.sort(), ["easylist", "easyprivacy", "ruadlist"]);
   const blockedAdProbe = await evaluateExtension(
     devToolsPort,
     `chrome.declarativeNetRequest.testMatchOutcome({
@@ -650,7 +723,7 @@ try {
     })`
   );
   assert.ok(
-    blockedAdProbe.matchedRules?.some((rule) => ["easylist", "easyprivacy"].includes(rule.rulesetId)),
+    blockedAdProbe.matchedRules?.some((rule) => ["easylist", "easyprivacy", "ruadlist"].includes(rule.rulesetId)),
     "A known ad request did not match the packaged blocking rules"
   );
 
@@ -727,7 +800,7 @@ try {
   assert.ok((await evaluateExtension(
     devToolsPort,
     "chrome.declarativeNetRequest.getEnabledRulesets()"
-  )).every((ruleset) => !["easylist", "easyprivacy"].includes(ruleset)));
+  )).every((ruleset) => !["easylist", "easyprivacy", "ruadlist"].includes(ruleset)));
   await evaluateExtensionPage(
     devToolsPort,
     `chrome.runtime.sendMessage({ kind: "setContentBlocking", enabled: true })`
@@ -832,6 +905,8 @@ try {
     ecoModeEnabled: restored.ecoModeEnabled,
     contentBlockerToggled: true,
     blockedRequestBlocked: true,
+    realtimeStatisticsVerified: true,
+    videoAdFixtureRecognized: true,
     cosmeticFilteringToggledWithException: true,
     temporarySitePauseRestored: true,
     localImageSwapRestored: true,

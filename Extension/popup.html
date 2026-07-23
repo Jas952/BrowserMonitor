@@ -14,10 +14,16 @@
         <p id="summary" data-i18n="collecting">Collecting data…</p>
       </div>
       <div class="header-actions">
+        <button id="header-activity-button" class="settings-button" type="button" data-i18n-title="activityHint" aria-label="Open site activity analytics">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 3 7-8M4 20h16"/></svg>
+        </button>
+        <button id="header-statistics-button" class="settings-button" type="button" data-i18n-title="statisticsHint" aria-label="Stats">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 18V11M12 18V6M19 18V9"/></svg>
+        </button>
         <button id="settings-button" class="settings-button" type="button" data-i18n-title="settingsHint" data-i18n-aria="openSettings">⚙</button>
         <label class="toggle-control" data-i18n-title="tabAnalysisDescription">
-          <span class="sr-only" data-i18n="tabAnalysis">Tab analysis</span>
-          <input id="monitoring-toggle" type="checkbox">
+          <span class="sr-only" data-i18n="extensionEnabled">Extension enabled</span>
+          <input id="extension-toggle" type="checkbox">
         </label>
       </div>
     </header>
@@ -51,7 +57,6 @@
       </button>
       <button id="pause-site-button" class="pause-site-button" type="button" disabled data-i18n="pause10">Pause 10 min</button>
       </div>
-
       <details id="exceptions" class="exceptions" hidden>
         <summary><span data-i18n="exceptions">Exceptions</span> <span id="exception-count">0</span></summary>
         <div id="exception-list" class="exception-list"></div>
@@ -90,13 +95,22 @@
           <span class="tool-symbol" aria-hidden="true">⌖</span>
           <span data-i18n="blockElement">Block</span>
         </button>
+        <button id="statistics-button" class="tool-button wide" type="button" data-i18n-title="statisticsHint">
+          <span class="tool-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 18V11M12 18V6M19 18V9"/></svg></span>
+          <span data-i18n="statisticsButton">Stats</span>
+        </button>
         <span id="pip-status" class="sr-only" aria-live="polite">Looking for video in the current tab…</span>
       </div>
     </section>
 
     <footer>
       <span class="connection"><i></i><span id="host-status">Checking app…</span></span>
-      <button id="refresh-button" class="text-button" type="button">↻&nbsp; <span data-i18n="refresh">Refresh</span></button>
+      <div class="footer-actions">
+        <button id="feedback-button" class="footer-icon-button" type="button" data-i18n-title="feedbackHint" aria-label="Send feedback or report a site problem">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v10H10l-5 4v-14Z"/><path d="M12 8v3.5M12 13.5v.1"/></svg>
+        </button>
+        <button id="refresh-button" class="text-button" type="button">↻&nbsp; <span data-i18n="refresh">Refresh</span></button>
+      </div>
     </footer>
 
     <section id="tab-detail-panel" class="overlay-panel" aria-labelledby="tab-detail-title" hidden>

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Browser Monitor — Suspicious link</title>
+    <link rel="stylesheet" href="link-warning.css">
+  </head>
+  <body>
+    <main class="warning-shell">
+      <section class="warning-panel" aria-labelledby="warning-title">
+        <div class="brand">
+          <img src="icons/browser-monitor-48.png" alt="">
+          <span>Browser Monitor</span>
+        </div>
+        <div class="signal" aria-hidden="true">!</div>
+        <p class="eyebrow" id="warning-risk">Suspicious link</p>
+        <h1 id="warning-title">Check this site before continuing</h1>
+        <p class="summary">This link has risk signals. Browser Monitor cannot prove the site is malicious, but it is worth slowing down before opening it.</p>
+
+        <dl class="domain-card">
+          <div>
+            <dt>Destination domain</dt>
+            <dd id="destination-domain">unknown</dd>
+          </div>
+          <div>
+            <dt>Source</dt>
+            <dd id="source-domain">current page</dd>
+          </div>
+        </dl>
+
+        <div class="reasons">
+          <h2>Why this appeared</h2>
+          <ul id="reason-list"></ul>
+        </div>
+
+        <details class="details">
+          <summary>Additional information</summary>
+          <label>
+            Full destination URL
+            <textarea id="destination-url" readonly rows="4"></textarea>
+          </label>
+        </details>
+
+        <div class="actions">
+          <button id="back-button" class="secondary" type="button">Back</button>
+          <button id="continue-button" class="warning" type="button">Continue once</button>
+          <button id="allow-button" class="primary" type="button">Allow this domain and continue</button>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="link-warning.js"></script>
+  </body>
+</html>

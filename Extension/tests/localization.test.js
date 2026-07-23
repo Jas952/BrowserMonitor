@@ -5,11 +5,17 @@ import { normalizeLanguage, translate } from "../localization.js";
 test("English and Russian settings copy is complete for core controls", () => {
   const keys = [
     "masterProtection", "easyList", "easyPrivacy", "cookieBanners", "newsletters",
-    "surveys", "notificationPrompts", "floatingVideo", "imageSwap", "customImages",
+    "surveys", "notificationPrompts", "floatingVideo", "videoAdProtection", "sponsorSkipping",
+    "imageSwap", "customImages", "statisticsTitle", "blockedToday", "blockedSevenDays",
+    "topBlockedSites", "blockedResources", "statisticsPrivacy",
     "interfaceTheme", "siteExceptions", "blockedDomains", "cosmeticRules",
     "filterSubscriptions", "backup",
     "sectionGeneral", "sectionGeneralDescription", "sectionFilters",
-    "sectionFiltersDescription", "sectionPageElements", "sectionPageElementsDescription"
+    "sectionFiltersDescription", "sectionPageElements", "sectionPageElementsDescription",
+    "extensionEnabled", "extensionPaused", "sectionLinkSafety", "sectionHistoryPrivacy",
+    "historyPrivacyEnabled", "historyPrivacyDomains", "purgeHistoryPrivacy",
+    "navProtectionCenter", "navPrivacyTools", "sectionProtectionCenter", "sectionPrivacyTools",
+    "filterListsGroup", "pageCleanupGroup"
   ];
   for (const key of keys) {
     assert.notEqual(translate("en", key), key);

@@ -81,6 +81,7 @@ button { color: inherit; }
 .brand-lockup { min-width: 0; }
 .header-actions { display: flex; align-items: center; gap: 8px; }
 .settings-button { display: grid; width: 24px; height: 24px; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--secondary); cursor: pointer; font-size: 13px; }
+.settings-button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .settings-button:hover { background: var(--panel); color: var(--text); }
 
 h1 {
@@ -198,7 +199,6 @@ p {
 .site-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px; margin-top: 8px; }
 .pause-site-button { height: 30px; padding: 0 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--accent); cursor: pointer; font-size: 9px; font-weight: 560; white-space: nowrap; }
 .pause-site-button:hover:not(:disabled) { background: var(--panel-strong); }
-
 .site-control:hover:not(:disabled) { background: var(--panel); }
 .site-control:disabled { cursor: default; opacity: 0.55; }
 .site-control-copy { display: grid; min-width: 0; gap: 2px; }
@@ -226,7 +226,8 @@ p {
 
 .tool-button {
   display: inline-flex;
-  width: 66px;
+  min-width: 0;
+  flex: 1 1 0;
   height: 34px;
   align-items: center;
   justify-content: center;
@@ -240,7 +241,7 @@ p {
   font-weight: 590;
   transition: color 150ms ease, background 150ms ease, border-color 150ms ease;
 }
-.tool-button.wide { width: 82px; }
+.tool-button.wide { width: auto; }
 .cookie-symbol { font-size: 18px; line-height: 1; }
 .tool-button:hover:not(:disabled) { background: var(--panel-strong); color: var(--text); }
 .tool-button.active,
@@ -335,6 +336,10 @@ footer {
   color: var(--secondary);
   font-size: 9px;
 }
+.footer-actions { display:flex; align-items:center; gap:7px; }
+.footer-icon-button { display:grid; width:28px; height:28px; padding:0; place-items:center; border:1px solid var(--line); border-radius:8px; background:transparent; color:var(--secondary); cursor:pointer; }
+.footer-icon-button:hover { background:var(--panel); color:var(--accent); }
+.footer-icon-button svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
 .connection { display: inline-flex; min-width: 0; align-items: center; gap: 6px; }
 .connection i { width: 5px; height: 5px; border-radius: 50%; background: var(--positive); }
 .text-button { padding: 4px 0; font-size: 9px; }
