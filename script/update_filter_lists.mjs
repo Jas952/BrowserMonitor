@@ -19,11 +19,22 @@ const sources = [
   {
     id: "easyprivacy",
     url: "https://easylist.to/easylist/easyprivacy.txt",
-    limit: 10_000,
+    limit: 9_500,
     output: "easyprivacy-network.json"
+  },
+  {
+    id: "ruadlist_network",
+    url: "https://easylist-downloads.adblockplus.org/ruadlist.txt",
+    limit: 1_000,
+    output: "ruadlist-network.json"
   }
 ];
 const optionalCosmeticSources = [
+  {
+    id: "easylist_cookie",
+    url: "https://secure.fanboy.co.nz/fanboy-cookiemonster.txt",
+    output: "easylist-cookie-cosmetic.css"
+  },
   {
     id: "ruadlist",
     url: "https://easylist-downloads.adblockplus.org/ruadlist.txt",
@@ -135,8 +146,8 @@ writeFileSync(
 );
 writeFileSync(join(rulesDirectory, "ATTRIBUTION.md"), `# Filter list attribution
 
-Network and cosmetic filters are derived from EasyList, EasyPrivacy, RU AdList,
-Fanboy's Social Blocking List, Adblock Warning Removal List, and NoCoin.
+Network and cosmetic filters are derived from EasyList, EasyPrivacy, EasyList Cookie List,
+RU AdList, Fanboy's Social Blocking List, Adblock Warning Removal List, and NoCoin.
 
 - Source: https://easylist.to/
 - Authors: The EasyList authors

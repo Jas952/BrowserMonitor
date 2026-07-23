@@ -7,7 +7,7 @@
 <p align="center">
   <img alt="Chrome extension" src="https://img.shields.io/badge/Chrome-Extension-4285F4?style=flat-square&logo=googlechrome&logoColor=white" />
   <img alt="Manifest V3" src="https://img.shields.io/badge/Manifest-V3-607D8B?style=flat-square" />
-  <img alt="Version 1.0.0" src="https://img.shields.io/badge/version-1.0.0-789C8F?style=flat-square" />
+  <img alt="Version 1.0.1" src="https://img.shields.io/badge/version-1.0.1-789C8F?style=flat-square" />
   <img alt="Local-first" src="https://img.shields.io/badge/Local--first-No_analytics-3D7564?style=flat-square" />
   <img alt="Codex helped with development" src="https://img.shields.io/badge/Helped_by-Codex-111827?style=flat-square&logo=openai&logoColor=white" />
 </p>
@@ -23,10 +23,16 @@ Browser Monitor is a local-first Chrome extension that combines content protecti
 ## What it does
 
 - blocks common ads, trackers, and cryptomining requests with Chrome Declarative Net Request;
+- adds specialized YouTube/Rutube video-ad controls and optional SponsorBlock community segment skipping;
+- warns before opening suspicious links with local checks for shorteners, lookalike domains, punycode, redirects, and risky social-feed destinations;
+- can hide selected domains from local Chrome history and supported search suggestions after explicit history permission;
+- shows live local blocking statistics for today and a rolling seven-day window, including top sites and resources;
+- measures active visits, reading, and video time only while a page is visibly in use;
 - explains which open tabs stay active and why they may need attention;
 - pauses expensive tab activity through reversible Eco Mode controls;
 - hides supported cookie banners, newsletter prompts, surveys, notification prompts, autoplay, and floating video;
 - provides site exceptions, custom filters, an element picker, Image Swap, Picture-in-Picture, and optional cookie export;
+- prepares site-filter reports and feature requests for explicit submission through GitHub;
 - includes separate English and Russian settings.
 
 <p align="center">
@@ -35,7 +41,7 @@ Browser Monitor is a local-first Chrome extension that combines content protecti
 
 ## Install
 
-1. Download `browser-monitor-1.0.0.zip` from the [latest release](https://github.com/Jas952/BrowserMonitor/releases/latest) and extract it.
+1. Download `browser-monitor-1.0.1.zip` from the [latest release](https://github.com/Jas952/BrowserMonitor/releases/latest) and extract it.
 2. Open `chrome://extensions` and enable **Developer mode**.
 3. Select **Load unpacked** and choose the extracted folder containing `manifest.json`.
 4. Pin Browser Monitor to the Chrome toolbar. When using a source checkout instead, choose its `Extension` folder.

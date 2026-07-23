@@ -26,9 +26,20 @@ const checksumPath = join(distDirectory, "SHA256SUMS.txt");
 const rootFiles = [
   "blocker-metadata.js",
   "blocker.js",
+  "activity-statistics.js",
+  "activity.css",
+  "activity.html",
+  "activity-page.js",
   "content.js",
   "cookies.js",
   "filter-parser.js",
+  "feedback.css",
+  "feedback.html",
+  "feedback.js",
+  "link-safety.js",
+  "link-warning.css",
+  "link-warning.html",
+  "link-warning.js",
   "localization.js",
   "options.css",
   "options.html",
@@ -37,7 +48,11 @@ const rootFiles = [
   "popup.html",
   "popup.js",
   "scoring.js",
-  "service-worker.js"
+  "service-worker.js",
+  "statistics.js",
+  "statistics.css",
+  "statistics.html",
+  "statistics-page.js"
 ];
 
 rmSync(distDirectory, { recursive: true, force: true });

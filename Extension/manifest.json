@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Browser Monitor",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minimum_chrome_version": "120",
   "description": "Analyzes Chrome tabs and provides local ad, tracker, distraction, cookie-banner, and custom element controls.",
   "icons": {
@@ -14,14 +14,17 @@
     "alarms",
     "contextMenus",
     "declarativeNetRequest",
+    "favicon",
     "scripting",
     "storage",
-    "tabs"
+    "tabs",
+    "webRequest"
   ],
   "optional_permissions": [
     "clipboardWrite",
     "cookies",
-    "downloads"
+    "downloads",
+    "history"
   ],
   "host_permissions": [
     "http://*/*",
@@ -42,6 +45,11 @@
         "id": "easyprivacy",
         "enabled": true,
         "path": "rules/easyprivacy-network.json"
+      },
+      {
+        "id": "ruadlist",
+        "enabled": true,
+        "path": "rules/ruadlist-network.json"
       }
     ]
   },
