@@ -7,10 +7,6 @@
 - faster site-level controls for exceptions, temporary pauses, manual element blocking, and filter-problem reports;
 - refined English and Russian interfaces across the popup, settings, analytics, and feedback screens.
 
-## Improvements
-
-This release also includes general reliability, compatibility, performance, and interface improvements across browser protection and analytics.
-
 ## Install
 
 1. Download `browser-monitor-1.0.1.zip` below.
