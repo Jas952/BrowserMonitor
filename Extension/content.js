@@ -142,9 +142,7 @@
     if (anchor.hasAttribute("download")) return false;
     const href = anchor.href || "";
     if (!/^https?:\/\//i.test(href)) return false;
-    if (new URL(href).origin === location.origin && new URL(href).hash && new URL(href).pathname === location.pathname) {
-      return false;
-    }
+    if (new URL(href).origin === location.origin) return false;
     return true;
   }
 
