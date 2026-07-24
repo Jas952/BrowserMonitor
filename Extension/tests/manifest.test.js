@@ -116,6 +116,11 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(contentScript, /YOUTUBE_SKIP_SELECTOR/);
   assert.match(contentScript, /getSponsorSegments/);
   assert.match(contentScript, /videoProtectionRoots/);
+  assert.match(
+    contentScript,
+    /if \(new URL\(href\)\.origin === location\.origin\) return false;/,
+    "Link Safety must not replace same-origin SPA navigation"
+  );
   assert.match(contentScript, /VIDEO_ACTIVE_POLL_MS = 2_500/);
   assert.match(contentScript, /VIDEO_HIDDEN_POLL_MS = 15_000/);
   assert.match(contentScript, /new MutationObserver\(scheduleEcoModeScan\)/);
