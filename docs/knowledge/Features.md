@@ -22,6 +22,7 @@
 
 - Предупреждение перед открытием подозрительных ссылок.
 - Локальные эвристики для shorteners, lookalike domains, punycode, redirects и risky social-feed destinations.
+- Same-origin ссылки остаются под управлением сайта; Link Safety проверяет переходы за пределы текущего origin и не задерживает внутреннюю SPA-навигацию.
 - Отдельная warning page с CSS/JS.
 
 ### Локальная аналитика
