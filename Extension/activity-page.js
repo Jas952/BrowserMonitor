@@ -15,6 +15,7 @@ const COPY = {
     privacy: "Only a focused, visible tab with recent interaction is counted. Domains and daily counters are kept for 90 days — without full URLs or page titles.",
     clear: "Clear statistics", confirm: "Clear all locally stored site activity?", visits: "active visits", sitesCount: "sites", second: "sec", minute: "min", hour: "h",
     periodLabel:"Period", metricsLabel:"Summary metrics", chartAria:"Activity chart"
+    ,redirectTitle:"Redirect map", redirectDetail:"Recent local navigation chains", redirectEmpty:"Redirect chains will appear after a site sends a tab through another domain.", clearRedirects:"Clear map"
   },
   ru: {
     title: "Аналитика посещений", subtitle: "Только активное время · данные остаются на устройстве", periods: ["День", "Неделя", "Месяц"],
@@ -28,6 +29,7 @@ const COPY = {
     privacy: "Считается только видимая вкладка в фокусе и недавнее взаимодействие. Хранятся домены и дневные счётчики за 90 дней — без URL и заголовков страниц.",
     clear: "Очистить статистику", confirm: "Очистить всю статистику посещений?", visits: "активных посещений", sitesCount: "сайтов", second:"сек", minute:"мин", hour:"ч",
     periodLabel:"Период", metricsLabel:"Основные показатели", chartAria:"График активности"
+    ,redirectTitle:"Карта перенаправлений", redirectDetail:"Недавние локальные цепочки переходов", redirectEmpty:"Цепочки появятся, когда сайт перенаправит вкладку через другой домен.", clearRedirects:"Очистить карту"
   }
 };
 const copy = () => COPY[language];
@@ -46,6 +48,8 @@ function applyLanguage() {
   $("#empty-state").textContent = c.empty; $("#reality-title").textContent = c.reality; $("#reality-detail").textContent = c.realityDetail;
   $("#focus-label").textContent = c.focus; $("#coffee-label").textContent = c.coffee; $("#films-label").textContent = c.films;
   $("#privacy-note").textContent = c.privacy; $("#clear-activity").textContent = c.clear;
+  $("#redirect-title").textContent = c.redirectTitle; $("#redirect-detail").textContent = c.redirectDetail;
+  $("#redirect-empty").textContent = c.redirectEmpty; $("#clear-redirects").textContent = c.clearRedirects;
   $(".periods").ariaLabel = c.periodLabel; $(".metrics").ariaLabel = c.metricsLabel; $("#activity-chart").ariaLabel = c.chartAria;
 }
 
@@ -134,8 +138,42 @@ function render(summary) {
   renderSites(summary.sites);
 }
 
+function renderRedirects(history) {
+  const entries = Array.isArray(history?.entries) ? history.entries.slice(0, 12) : [];
+  $("#redirect-empty").hidden = entries.length > 0;
+  $("#redirect-list").replaceChildren(...entries.map((entry) => {
+    const chain = document.createElement("div");
+    chain.className = "redirect-chain";
+    entry.steps.forEach((site, index) => {
+      if (index) {
+        const arrow = document.createElement("span");
+        arrow.className = "redirect-arrow";
+        arrow.textContent = "→";
+        chain.append(arrow);
+      }
+      const node = document.createElement("span");
+      node.className = "redirect-node";
+      node.textContent = site;
+      chain.append(node);
+    });
+    const time = document.createElement("time");
+    time.className = "redirect-time";
+    time.dateTime = new Date(entry.createdAt).toISOString();
+    time.textContent = new Date(entry.createdAt).toLocaleString(language === "ru" ? "ru-RU" : "en-US", {
+      day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"
+    });
+    chain.append(time);
+    return chain;
+  }));
+}
+
 async function refresh() {
-  render(await chrome.runtime.sendMessage({ kind: "getSiteActivityStatistics", period }));
+  const [summary, redirects] = await Promise.all([
+    chrome.runtime.sendMessage({ kind: "getSiteActivityStatistics", period }),
+    chrome.runtime.sendMessage({ kind: "getRedirectHistory" })
+  ]);
+  render(summary);
+  renderRedirects(redirects);
 }
 
 function selectPeriod(button) {
@@ -159,6 +197,11 @@ for (const button of document.querySelectorAll("[data-period]")) {
 $("#clear-activity").addEventListener("click", async () => {
   if (!confirm(copy().confirm)) return;
   await chrome.runtime.sendMessage({ kind: "clearSiteActivityStatistics" });
+  await refresh();
+});
+
+$("#clear-redirects").addEventListener("click", async () => {
+  await chrome.runtime.sendMessage({ kind: "clearRedirectHistory" });
   await refresh();
 });
 

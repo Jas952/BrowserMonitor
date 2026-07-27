@@ -1,44 +1,58 @@
-# GitHub и релизы
+# GitHub and Releases
 
-Этот документ задаёт единый стандарт работы с GitHub, README и релизами Browser Monitor. Он применяется ко всем следующим версиям.
+This document defines the standard for Browser Monitor GitHub content, README updates, and future releases.
 
-## Общие принципы
+## Principles
 
-- GitHub-материалы пишутся для пользователя продукта, а не как технический журнал разработки.
-- В центре описания находятся новые возможности, заметные изменения поведения и пользовательская польза.
-- В release notes не перечисляются имена внутренних функций, файлов, API, CSS selectors, разрешённые лимиты, тестовые fixture или детали рефакторинга.
-- Мелкие fixes, совместимость, оптимизация и визуальные правки объединяются в одну общую фразу.
-- Нельзя заявлять функцию выпущенной, если её нет в release ZIP или она не прошла предусмотренную проверку.
-- Privacy-изменения, новые permissions и внешние сетевые взаимодействия описываются явно, даже если технические подробности обычно скрываются.
+- GitHub content is written for product users, not as an engineering log.
+- Focus on new capabilities, visible behavior changes, and user value.
+- Release notes omit internal function names, files, APIs, CSS selectors, implementation limits, test fixtures, and refactoring details.
+- Combine small fixes, compatibility work, optimization, and visual changes into one general statement.
+- Never claim that a feature shipped unless it is in the release ZIP and passed the required checks.
+- State privacy changes, new permissions, and external network interactions explicitly.
 
-## Версионирование
+## Versioning
 
-Используется формат `MAJOR.MINOR.PATCH`:
+Use `MAJOR.MINOR.PATCH`:
 
-- `PATCH` — исправления, оптимизация и небольшие улучшения существующих возможностей;
-- `MINOR` — заметная новая пользовательская возможность или крупное расширение продукта;
-- `MAJOR` — несовместимое изменение продукта, данных или основного пользовательского сценария.
+- `PATCH`: fixes, optimization, and small improvements to existing capabilities.
+- `MINOR`: a visible new user capability or major product expansion.
+- `MAJOR`: an incompatible change to the product, data, or main user flow.
 
-Перед релизом одна версия должна быть указана во всех местах:
+Before release, use one version in:
 
 - `Extension/manifest.json`;
-- README badge и имя ZIP в инструкции установки;
-- `docs/ReleaseChecklist.md`;
-- `docs/ReleaseNotes-X.Y.Z.md`;
+- the README badge and ZIP name in installation instructions;
 - `docs/knowledge/Product.md`;
 - Git tag `vX.Y.Z`;
-- название GitHub Release и release assets.
+- the GitHub Release title and assets.
 
-## Единый формат GitHub Release
+## GitHub Release format
 
-Release notes пишутся на английском языке в следующем формате:
+Write release notes in English:
 
 ```markdown
-## What’s new
+## What's new
 
 - three to six user-visible changes;
 - each point explains value rather than implementation;
 - related small changes are combined.
+
+New tools must be highlighted as a separate list inside `What's new`:
+
+```markdown
+## What's new
+
+New tools:
+
+- first new tool and the problem it solves;
+- second new tool and the problem it solves.
+
+Other changes:
+
+- visible improvement or compatibility update;
+- reliability and polish summary.
+```
 
 ## Install
 
@@ -49,66 +63,65 @@ Release notes пишутся на английском языке в следу�
 5. Pin Browser Monitor to the Chrome toolbar.
 ```
 
-Название версии уже отображается в заголовке GitHub Release, поэтому его не нужно повторять внутри description. Разделы `Improvements`, `Downloads` и `Privacy` также не добавляются: небольшие улучшения при необходимости объединяются в один пункт `What’s new`, assets GitHub показывает отдельно, а постоянная privacy-информация находится в README и Privacy Policy.
+The version already appears in the GitHub Release title, so do not repeat it in the description. Do not add separate `Improvements`, `Downloads`, or `Privacy` sections: combine small improvements under `What's new`, let GitHub display assets, and keep permanent privacy information in the README and Privacy Policy.
 
-## Как описывать изменения
+## Describing changes
 
-Хорошо:
+Good:
 
 - `Improved protection against video advertising on supported sites.`
 - `Added local activity insights for reading and video time.`
 - `General reliability and performance improvements across browser protection and analytics.`
 
-Не использовать:
+Avoid:
 
-- перечень изменённых функций и файлов;
-- номера внутренних правил или лимитов;
-- описание каждого исправленного selector;
-- отдельные пункты «уменьшен polling», «изменён timeout», «исправлена мутация Date»;
-- длинный список мелких UI-отступов и состояний кнопок.
+- lists of changed functions and files;
+- internal rule numbers or limits;
+- descriptions of every fixed selector;
+- separate points for reduced polling, timeout changes, or internal mutation fixes;
+- long lists of small spacing and button-state changes.
 
-Если мелких изменений много и их важно упомянуть, они сворачиваются в один пункт внутри `What’s new`. Техническая детализация остаётся в commit history, тестах и knowledge-документации.
+When many small changes matter, combine them into one `What's new` item. Keep technical detail in commit history, tests, and knowledge documentation.
 
 ## README
 
-README описывает текущее стабильное состояние продукта:
+The README describes the current stable product:
 
-- краткое назначение;
-- основные пользовательские возможности;
-- local-first и privacy-позиционирование;
-- актуальную версию;
-- установку последнего ZIP;
-- ссылку на последний GitHub Release;
-- контакты и связанные проекты.
+- concise purpose;
+- main user capabilities;
+- local-first and privacy position;
+- current version;
+- installation of the latest ZIP;
+- link to the latest GitHub Release;
+- contact details and related projects.
 
-README не должен превращаться в changelog. Устаревшие возможности и старые номера ZIP обновляются в рамках каждого релиза.
+The README must not become a changelog. Update obsolete capabilities and old ZIP versions with each release.
 
-## Процесс выпуска
+## Release process
 
-1. Сопоставить заявленные возможности с фактическим кодом.
-2. Обновить версию во всех обязательных местах.
-3. Создать `docs/ReleaseNotes-X.Y.Z.md` по единому шаблону.
-4. Запустить основной набор тестов расширения.
-5. Собрать ZIP через release builder.
-6. Проверить имя архива, версию manifest, состав ZIP и SHA-256.
-7. Зафиксировать release scope отдельным commit.
-8. Отправить изменения в GitHub и убедиться, что release commit находится в основной ветке.
-9. Создать tag `vX.Y.Z`.
-10. Создать GitHub Release из подготовленного файла и приложить ZIP вместе с `SHA256SUMS.txt`.
-11. Проверить опубликованную страницу, текст, tag и скачивание обоих assets.
+1. Match claimed capabilities against the actual code.
+2. Update the version in every required location.
+3. Prepare the GitHub Release text using the standard format.
+4. Run the main extension test suite.
+5. Build the ZIP with the release builder.
+6. Verify the archive name, manifest version, ZIP contents, and SHA-256.
+7. Commit the release scope separately.
+8. Push changes to GitHub and confirm that the release commit is on the main branch.
+9. Create tag `vX.Y.Z`.
+10. Create the GitHub Release and attach the ZIP and `SHA256SUMS.txt`.
+11. Verify the published page, text, tag, and both asset downloads.
 
-## Запреты
+## Prohibited actions
 
-- Не публиковать tag до успешной сборки и тестов.
-- Не перезаписывать существующий release tag другой сборкой.
-- Не включать в commit локальные каталоги `.obsidian`, `.codebase-memory`, временные screenshots или служебные файлы Codex.
-- Не публиковать секреты, cookies, локальные browser profiles и пользовательские данные.
-- Не называть черновую или непроверенную возможность выпущенной.
+- Do not publish a tag before successful build and tests.
+- Do not overwrite an existing release tag with another build.
+- Do not commit local `.obsidian`, `.codebase-memory`, temporary screenshot, or Codex service directories.
+- Do not publish secrets, cookies, local browser profiles, or user data.
+- Do not describe a draft or unverified capability as released.
 
-## Связанные материалы
+## Related notes
 
 - [[Product]]
 - [[Architecture]]
 - [[Features]]
-- [[Decisions]]
 - [[Opportunities]]

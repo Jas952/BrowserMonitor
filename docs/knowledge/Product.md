@@ -1,60 +1,23 @@
 # Product
 
-## Назначение
+Browser Monitor is a local-first Chrome extension for safer browsing, reducing page noise, and analyzing browser activity locally.
 
-Browser Monitor - самостоятельное local-first Chrome extension для защиты браузинга и объяснения активности вкладок. Расширение объединяет блокировку рекламы и трекеров, контроль раздражающих элементов страницы, предупреждения о подозрительных ссылках и локальную статистику браузерной активности.
+## Principles
 
-Knowledge base этого проекта описывает только Browser Monitor и не является продолжением базы знаний других приложений.
+- Works without an account or backend.
+- User data stays in the Chrome profile.
+- Sensitive features require an explicit action and use optional permissions where possible.
+- Protection can be reverted or disabled for a specific site.
+- Local heuristics are never presented as guaranteed security checks.
+- Remote executable code, advertising SDKs, and hidden analytics are prohibited.
 
-## Пользовательские задачи
+## Boundaries
 
-- Блокировать распространённую рекламу, трекеры и cryptomining-запросы.
-- Снижать шум от cookie banners, newsletter prompts, surveys, notification prompts, autoplay и floating video.
-- Видеть, какие вкладки активны и почему они могут требовать внимания.
-- Включать обратимые Eco Mode controls для дорогой активности вкладок.
-- Получать локальную статистику блокировок за сегодня и rolling seven-day window.
-- Предупреждаться перед переходом по suspicious links: shorteners, lookalike domains, punycode, redirects и risky social-feed destinations.
-- Настраивать exceptions, custom filters, element picker, Image Swap и Picture-in-Picture.
-- Использовать отдельные английские и русские тексты интерфейса.
-- По явному разрешению скрывать выбранные домены из локальной истории Chrome и поддерживаемых search suggestions.
-- Показывать локальную аналитику активных посещений сайтов, чтения и просмотра видео за день, неделю и месяц.
-- Предлагать новый инструмент или сообщать об ошибке через явную двуязычную форму с необязательным screenshot.
+- Platform: Google Chrome 120+, Manifest V3.
+- The extension is not an antivirus and cannot guarantee that a site or file is safe.
+- Network rules are limited by Declarative Net Request; page controls are limited by the available DOM.
+- Link Safety, search result labels, and Crypto Guard operate locally and may produce errors.
+- Activity history stores domains and aggregates, not page content.
+- External data is used only by explicitly enabled features such as SponsorBlock or when the user opens a prepared feedback email.
 
-## Продуктовые принципы
-
-1. Расширение работает local-first и не требует аккаунта.
-2. Пользовательские данные остаются в локальном Chrome profile.
-3. Опасные или чувствительные возможности используют optional permissions и явное действие пользователя.
-4. Блокировка должна быть обратимой через настройки и site exceptions.
-5. Расширение не должно добавлять developer-operated analytics server или advertising SDK.
-6. Permissions должны расширяться только под конкретный пользовательский сценарий.
-7. Link Safety не должен выдавать эвристику за гарантированную проверку безопасности.
-
-## Границы продукта
-
-- Расширение ориентировано на Chrome Manifest V3 и минимум Chrome `120`.
-- Блокировка network-запросов зависит от Declarative Net Request и лимитов Chrome.
-- Cosmetic filtering и content controls ограничены возможностями content scripts и структурой конкретных сайтов.
-- SponsorBlock является optional community-based механизмом и не должен быть обязательной внешней зависимостью базовой защиты.
-- History, cookies, downloads и clipboardWrite запрашиваются только как optional permissions для связанных инструментов.
-- Аналитика активности хранит только домены и дневные агрегаты за 90 дней. Полные URL, заголовки страниц и содержимое текста не сохраняются.
-- Время учитывается только у видимого документа в фокусе после недавнего взаимодействия; открытые фоновые вкладки не увеличивают счётчики.
-- Feedback хранится локальным черновиком и передаётся только после явного перехода пользователя в GitHub Issue composer.
-- Быстрый репорт проблемы фильтров включает полный URL и заголовок текущей страницы только после отдельного явного нажатия пользователя; скрытой фоновой отправки нет.
-- Пользователь может через контекстное меню полностью исключить текущий сайт из protection или создать доменно-ограниченное правило скрытия выбранного элемента.
-- Расширение не является антивирусом или полноценной phishing-protection системой.
-
-## Целевая платформа
-
-- Google Chrome `120+`.
-- Manifest V3.
-- JavaScript modules.
-- Node test runner для локальных тестов.
-- Версия extension: `1.0.1`.
-
-## Связанные материалы
-
-- [[Architecture]]
-- [[Features]]
-- [[Decisions]]
-- [[Opportunities]]
+Implemented capabilities are listed in [[Features]], implementation structure in [[Architecture]], and future ideas in [[Opportunities]].

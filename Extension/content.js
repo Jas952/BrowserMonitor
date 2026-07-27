@@ -51,8 +51,16 @@
   let historyPrivacyDomains = [];
   let historyPrivacyObserver = null;
   let historyPrivacyScanTimer = null;
+  let searchProtectionObserver = null;
+  let searchProtectionScanTimer = null;
+  let searchProtectionEnabled = true;
+  let searchProtectionLanguage = "en";
+  const searchProtectionHosts = new Set();
   let subscriptionCosmeticFilters = [];
   let imageSwapCustomImages = [];
+  const continueWatchingVideos = new WeakMap();
+  let continueWatchingIdentityTimer = null;
+  let cryptoGuardCopy = null;
 
   const PROTECTION_STYLE_ID = "browser-monitor-protection-style";
   const ACTIVATION_OVERLAY_ID = "browser-monitor-activation-overlay";
@@ -64,6 +72,8 @@
   const VIDEO_HIDDEN_POLL_MS = 15_000;
   const ECO_SCAN_DELAY_MS = 750;
   const ECO_HIDDEN_SCAN_DELAY_MS = 4_000;
+  const SEARCH_PROTECTION_SCAN_DELAY_MS = 240;
+  const CRYPTO_GUARD_COPY_TTL_MS = 5 * 60 * 1_000;
   const IMAGE_SWAP_SELECTOR = [
     "[data-ad-slot]",
     "[data-ad-client]",
@@ -171,7 +181,11 @@
       sourceUrl: location.href
     }).then((response) => {
       if (["warn", "block"].includes(response?.action) && response.warningUrl) {
-        continueNavigation(anchor, response.warningUrl);
+        chrome.runtime.sendMessage({
+          kind: "navigateWarning",
+          url: response.warningUrl,
+          target: (anchor.getAttribute("target") || "").toLowerCase()
+        });
         return;
       }
       continueNavigation(anchor, targetUrl);
@@ -247,6 +261,172 @@
     }
   }
 
+  function searchProtectionCopy() {
+    return searchProtectionLanguage === "ru"
+      ? {
+          trusted: "Доверенный",
+          risk: "Риск скама",
+          suspicious: "Подозрительный",
+          unverified: "Проверить",
+          trust: "Считать оригиналом",
+          trustedHint: "Домен добавлен вами в локальный белый список",
+          riskHint: "Локальные признаки похожи на скам или подмену домена",
+          suspiciousHint: "Перед переходом внимательно проверьте домен",
+          unverifiedHint: "Browser Monitor не подтверждал этот домен"
+        }
+      : {
+          trusted: "Trusted",
+          risk: "Scam risk",
+          suspicious: "Suspicious",
+          unverified: "Check",
+          trust: "Trust as original",
+          trustedHint: "You added this domain to the local allowlist",
+          riskHint: "Local signals resemble a scam or lookalike domain",
+          suspiciousHint: "Check the domain carefully before opening it",
+          unverifiedHint: "Browser Monitor has not verified this domain"
+        };
+  }
+
+  function removeSearchProtectionBadges() {
+    document.querySelectorAll("[data-browser-monitor-search-badge]").forEach((element) => element.remove());
+    document.querySelectorAll("[data-browser-monitor-search-checked]").forEach((element) => {
+      element.removeAttribute("data-browser-monitor-search-checked");
+    });
+  }
+
+  function updateSearchProtectionBadge(host, action, trusted) {
+    const copy = searchProtectionCopy();
+    const status = host.shadowRoot?.querySelector(".status");
+    const trustButton = host.shadowRoot?.querySelector(".trust");
+    if (!status || !trustButton) return;
+    const kind = trusted ? "trusted" : action === "block" ? "risk" : action === "warn" ? "suspicious" : "unverified";
+    status.className = `status ${kind}`;
+    status.textContent = copy[kind];
+    status.title = copy[`${kind}Hint`];
+    trustButton.hidden = trusted;
+  }
+
+  function createSearchProtectionBadge(domain, action, trusted) {
+    const copy = searchProtectionCopy();
+    const host = document.createElement("span");
+    host.dataset.browserMonitorSearchBadge = domain;
+    const shadow = host.attachShadow({ mode: "open" });
+    shadow.innerHTML = `
+      <style>
+        :host { display:inline-flex; position:relative; z-index:2; vertical-align:middle; margin-inline-start:7px; contain:content; }
+        .wrap { display:inline-flex; align-items:center; gap:3px; font:600 10px/18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; white-space:nowrap; border-radius:999px; backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); }
+        button { font:inherit; }
+        .status { display:inline-flex; min-height:18px; align-items:center; gap:4px; padding:0 7px; border:1px solid rgba(80,91,98,.18); border-radius:999px; background:rgba(80,91,98,.2); color:#5d686e; }
+        .status::before { content:""; width:5px; height:5px; border-radius:50%; background:currentColor; }
+        .status.trusted { border-color:rgba(49,113,74,.24); background:rgba(49,113,74,.18); color:#31714a; }
+        .status.suspicious { border-color:rgba(157,111,38,.27); background:rgba(157,111,38,.2); color:#8b611f; }
+        .status.risk { border-color:rgba(166,62,58,.28); background:rgba(166,62,58,.2); color:#a13f3b; }
+        .trust { width:18px; height:18px; padding:0; border:1px solid rgba(80,91,98,.2); border-radius:50%; background:rgba(255,255,255,.82); color:#59676e; cursor:pointer; line-height:16px; }
+        .trust:hover, .trust:focus-visible { background:#fff; color:#244d3a; outline:2px solid rgba(65,113,88,.2); }
+        @media (prefers-color-scheme:dark) {
+          .status { border-color:rgba(255,255,255,.18); background:rgba(40,45,50,.85); color:#aab4b9; }
+          .status.trusted { background:rgba(49,113,74,.6); color:#82bd93; } .status.suspicious { background:rgba(157,111,38,.6); color:#d0a45d; } .status.risk { background:rgba(166,62,58,.6); color:#dc807c; }
+          .trust { border-color:rgba(255,255,255,.2); background:rgba(25,27,28,.85); color:#b7c1c6; }
+        }
+      </style>
+      <span class="wrap">
+        <span class="status"></span>
+        <button class="trust" type="button" title="${copy.trust}" aria-label="${copy.trust}">+</button>
+      </span>
+    `;
+    const trustButton = shadow.querySelector(".trust");
+    trustButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      trustButton.disabled = true;
+      chrome.runtime.sendMessage({ kind: "allowLinkSafetyDomain", domain }).then((result) => {
+        if (!result?.ok) throw new Error(result?.error);
+        searchProtectionHosts.add(result.domain || domain);
+        document.querySelectorAll("[data-browser-monitor-search-badge]").forEach((candidate) => {
+          if (candidate.dataset.browserMonitorSearchBadge === (result.domain || domain)) {
+            updateSearchProtectionBadge(candidate, "allow", true);
+          }
+        });
+      }).catch(() => {
+        trustButton.disabled = false;
+      });
+    });
+    updateSearchProtectionBadge(host, action, trusted);
+    return host;
+  }
+
+  function searchResultAnchor(candidate) {
+    if (candidate instanceof HTMLAnchorElement) return candidate;
+    return candidate?.closest?.("a[href]") ?? candidate?.querySelector?.("a[href]") ?? null;
+  }
+
+  function placeSearchProtectionBadge(anchor, host) {
+    const heading = anchor.closest("h2, h3") ?? anchor.querySelector("h2, h3");
+    if (heading?.contains(anchor)) {
+      heading.append(host);
+      return true;
+    }
+    if (!anchor.parentElement) return false;
+    anchor.insertAdjacentElement("afterend", host);
+    return true;
+  }
+
+  function scanSearchResults() {
+    searchProtectionScanTimer = null;
+    const guard = globalThis.BrowserMonitorPageGuard;
+    const engine = guard?.searchEngine(location.hostname);
+    if (!engine || !searchProtectionEnabled || document.hidden) return;
+    const selector = guard.searchResultSelectors(engine).join(",");
+    if (!selector) return;
+    let inspected = 0;
+    for (const candidate of document.querySelectorAll(selector)) {
+      if (inspected >= 80) break;
+      const anchor = searchResultAnchor(candidate);
+      if (!anchor || anchor.hasAttribute("data-browser-monitor-search-checked")) continue;
+      anchor.setAttribute("data-browser-monitor-search-checked", "true");
+      const targetURL = guard.unwrapSearchURL(anchor.href, location.hostname.replace(/^www\./, ""));
+      const domain = guard.registrableDomain(targetURL);
+      if (!targetURL || !domain || domain === guard.registrableDomain(location.href)) continue;
+      inspected += 1;
+      chrome.runtime.sendMessage({
+        kind: "evaluateLinkSafety",
+        url: targetURL,
+        sourceUrl: location.href
+      }).then((result) => {
+        if (!anchor.isConnected || anchor.parentElement?.querySelector?.(`[data-browser-monitor-search-badge="${CSS.escape(domain)}"]`)) return;
+        const trusted = searchProtectionHosts.has(result?.registrableDomain || domain);
+        const host = createSearchProtectionBadge(result?.registrableDomain || domain, result?.action || "allow", trusted);
+        if (!placeSearchProtectionBadge(anchor, host)) host.remove();
+      }).catch(() => {});
+    }
+  }
+
+  function scheduleSearchProtectionScan() {
+    if (searchProtectionScanTimer || document.hidden) return;
+    searchProtectionScanTimer = setTimeout(scanSearchResults, SEARCH_PROTECTION_SCAN_DELAY_MS);
+  }
+
+  function configureSearchProtection({ enabled = true, language = "en", trustedDomains = [] } = {}) {
+    searchProtectionEnabled = enabled !== false;
+    searchProtectionLanguage = language === "ru" ? "ru" : "en";
+    searchProtectionHosts.clear();
+    for (const domain of trustedDomains) {
+      const normalized = globalThis.BrowserMonitorPageGuard?.registrableDomain(`https://${domain}`);
+      if (normalized) searchProtectionHosts.add(normalized);
+    }
+    searchProtectionObserver?.disconnect();
+    searchProtectionObserver = null;
+    clearTimeout(searchProtectionScanTimer);
+    searchProtectionScanTimer = null;
+    removeSearchProtectionBadges();
+    if (!searchProtectionEnabled || !globalThis.BrowserMonitorPageGuard?.searchEngine(location.hostname)) return;
+    searchProtectionObserver = new MutationObserver(scheduleSearchProtectionScan);
+    if (!document.hidden) {
+      searchProtectionObserver.observe(document.documentElement, { childList: true, subtree: true });
+      scanSearchResults();
+    }
+  }
+
   function isYouTubePage() {
     return YOUTUBE_HOSTS.has(location.hostname.toLowerCase());
   }
@@ -296,7 +476,7 @@
     const host = document.createElement("div");
     host.id = ACTIVATION_OVERLAY_ID;
     host.setAttribute("aria-hidden", "true");
-    const shadow = host.attachShadow({ mode: "closed" });
+    const shadow = host.attachShadow({ mode: "open" });
     shadow.innerHTML = `
       <style>
         :host {
@@ -1146,6 +1326,408 @@
     }
   }
 
+  function pageNoticeCopy(kind, values = {}) {
+    const russian = searchProtectionLanguage === "ru";
+    if (kind === "cryptoMismatch") {
+      return russian
+        ? "Crypto Guard остановил вставку: адрес отличается от недавно скопированного."
+        : "Crypto Guard stopped the paste: the address differs from the one copied recently.";
+    }
+    if (kind === "cryptoCleaned") {
+      return russian
+        ? "Crypto Guard удалил скрытые символы и скопировал чистый адрес."
+        : "Crypto Guard removed hidden characters and copied the clean address.";
+    }
+    if (kind === "cryptoFailed") {
+      return russian
+        ? "Crypto Guard не смог безопасно скопировать адрес. Скопируйте его ещё раз."
+        : "Crypto Guard could not copy the address safely. Please copy it again.";
+    }
+    return "";
+  }
+
+  function showPageNotice(kind, values = {}) {
+    const text = pageNoticeCopy(kind, values);
+    if (!text) return;
+    const noticeID = "browser-monitor-page-notice";
+    document.querySelector(`#${noticeID}`)?.remove();
+    const host = document.createElement("div");
+    host.id = noticeID;
+    const shadow = host.attachShadow({ mode: "closed" });
+    shadow.innerHTML = `
+      <style>
+        :host { position:fixed; right:18px; bottom:18px; z-index:2147483647; display:block; max-width:min(340px,calc(100vw - 36px)); }
+        .notice { display:grid; grid-template-columns:8px minmax(0,1fr) 20px; align-items:start; gap:10px; padding:12px 12px 12px 14px; border:1px solid rgba(62,72,78,.18); border-radius:12px; background:rgba(248,249,247,.96); color:#283035; box-shadow:0 10px 30px rgba(17,24,28,.16); backdrop-filter:blur(12px); font:500 12px/1.42 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+        i { width:7px; height:7px; margin-top:5px; border-radius:50%; background:${kind.startsWith("crypto") ? "#a6623e" : "#4b725c"}; }
+        button { width:20px; height:20px; padding:0; border:0; border-radius:6px; background:transparent; color:#6f777b; cursor:pointer; font:16px/20px inherit; }
+        button:hover, button:focus-visible { background:rgba(0,0,0,.06); outline:none; }
+        @media (prefers-color-scheme:dark) { .notice { border-color:rgba(255,255,255,.12); background:rgba(27,30,31,.96); color:#edf0f1; box-shadow:0 12px 34px rgba(0,0,0,.32); } button { color:#aeb7bb; } }
+      </style>
+      <div class="notice" role="status"><i></i><span></span><button type="button" aria-label="Close">×</button></div>
+    `;
+    shadow.querySelector("span").textContent = text;
+    shadow.querySelector("button").addEventListener("click", () => host.remove());
+    (document.documentElement || document).append(host);
+    setTimeout(() => host.remove(), 8_000);
+  }
+
+  function showContinueWatchingNotice(video, { title, time, url }) {
+    const russian = searchProtectionLanguage === "ru";
+    const noticeID = "browser-monitor-page-notice";
+    document.querySelector(`#${noticeID}`)?.remove();
+    const host = document.createElement("div");
+    host.id = noticeID;
+    host.dataset.browserMonitorNotice = "continue-watching";
+    host.dataset.browserMonitorMediaTitle = title;
+    host.dataset.browserMonitorMediaTime = time;
+    const shadow = host.attachShadow({ mode: "open" });
+    shadow.innerHTML = `
+      <style>
+        :host { position:fixed; right:18px; bottom:18px; z-index:2147483647; display:block; width:min(370px,calc(100vw - 36px)); }
+        .notice { position:relative; padding:14px 42px 14px 16px; border:1px solid rgba(62,72,78,.18); border-radius:14px; background:rgba(248,249,247,.97); color:#283035; box-shadow:0 12px 34px rgba(17,24,28,.18); backdrop-filter:blur(12px); font:500 12px/1.42 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+        .eyebrow { display:flex; align-items:center; gap:7px; margin-bottom:5px; color:#4b725c; font-size:11px; font-weight:700; letter-spacing:.02em; }
+        .eyebrow::before { content:""; width:7px; height:7px; border-radius:50%; background:#4b725c; }
+        a { display:block; overflow:hidden; margin-bottom:4px; color:inherit; font-size:13px; font-weight:700; text-decoration:none; text-overflow:ellipsis; white-space:nowrap; }
+        a:hover, a:focus-visible { color:#315e47; text-decoration:underline; outline:none; }
+        .time { color:#657076; }
+        .actions { display:flex; margin-top:11px; }
+        button { border:0; cursor:pointer; font:600 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+        .go { min-height:30px; padding:0 11px; border-radius:8px; background:#dfeae3; color:#315e47; }
+        .go:hover, .go:focus-visible { background:#d3e3d8; outline:2px solid rgba(65,113,88,.22); }
+        .close { position:absolute; top:10px; right:10px; width:24px; height:24px; padding:0; border-radius:7px; background:transparent; color:#6f777b; font-size:17px; line-height:24px; }
+        .close:hover, .close:focus-visible { background:rgba(0,0,0,.06); outline:none; }
+        @media (prefers-color-scheme:dark) {
+          .notice { border-color:rgba(255,255,255,.12); background:rgba(27,30,31,.97); color:#edf0f1; box-shadow:0 12px 34px rgba(0,0,0,.34); }
+          .eyebrow { color:#8db49b; } .eyebrow::before { background:#8db49b; }
+          .time { color:#aeb7bb; } a:hover, a:focus-visible { color:#a8cfb4; }
+          .go { background:#30453a; color:#b7dbc2; } .go:hover, .go:focus-visible { background:#395244; }
+          .close { color:#aeb7bb; }
+        }
+      </style>
+      <div class="notice" role="status" aria-live="polite">
+        <div class="eyebrow"></div>
+        <a></a>
+        <div class="time"></div>
+        <div class="actions"><button class="go" type="button"></button></div>
+        <button class="close" type="button">×</button>
+      </div>
+    `;
+    const link = shadow.querySelector("a");
+    link.href = url;
+    link.textContent = title;
+    shadow.querySelector(".eyebrow").textContent = russian ? "Продолжить просмотр" : "Continue watching";
+    shadow.querySelector(".time").textContent = russian
+      ? `Вы остановились на ${time}. Позиция хранится только локально.`
+      : `You stopped at ${time}. The position is stored locally only.`;
+    const goButton = shadow.querySelector(".go");
+    goButton.textContent = russian ? "Перейти к плееру" : "Go to player";
+    goButton.addEventListener("click", () => {
+      video.scrollIntoView({ behavior: "smooth", block: "center" });
+      video.focus({ preventScroll: true });
+    });
+    const closeButton = shadow.querySelector(".close");
+    closeButton.setAttribute("aria-label", russian ? "Закрыть" : "Close");
+    closeButton.addEventListener("click", () => host.remove());
+    (document.documentElement || document).append(host);
+  }
+
+  async function sha256(value) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value)));
+    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  function copiedSelectionText(event) {
+    const target = event.target;
+    if ((target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)
+        && Number.isInteger(target.selectionStart) && Number.isInteger(target.selectionEnd)) {
+      return target.value.slice(target.selectionStart, target.selectionEnd);
+    }
+    return document.getSelection()?.toString() ?? "";
+  }
+
+  async function rememberCryptoCopy(address) {
+    const fingerprint = await sha256(address.value);
+    cryptoGuardCopy = { fingerprint, family: address.family, expiresAt: Date.now() + CRYPTO_GUARD_COPY_TTL_MS };
+    await chrome.runtime.sendMessage({
+      kind: "rememberCryptoGuardCopy",
+      fingerprint,
+      family: address.family
+    }).catch(() => {});
+  }
+
+  function handleCryptoCopy(event) {
+    const address = globalThis.BrowserMonitorPageGuard?.findWalletAddress(copiedSelectionText(event));
+    if (!address || !event.clipboardData) return;
+    try {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      event.clipboardData.clearData();
+      event.clipboardData.setData("text/plain", address.value);
+      void rememberCryptoCopy(address);
+      if (address.changed) showPageNotice("cryptoCleaned");
+    } catch {
+      showPageNotice("cryptoFailed");
+    }
+  }
+
+  function insertPastedText(target, value) {
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+      const start = Number.isInteger(target.selectionStart) ? target.selectionStart : target.value.length;
+      const end = Number.isInteger(target.selectionEnd) ? target.selectionEnd : start;
+      target.setRangeText(value, start, end, "end");
+      target.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        inputType: "insertFromPaste",
+        data: value
+      }));
+      return true;
+    }
+    const editable = target?.closest?.("[contenteditable=''], [contenteditable='true']");
+    if (!editable) return false;
+    const selection = document.getSelection();
+    if (!selection?.rangeCount) return false;
+    selection.deleteFromDocument();
+    const text = document.createTextNode(value);
+    const range = selection.getRangeAt(0);
+    range.insertNode(text);
+    range.setStartAfter(text);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    editable.dispatchEvent(new InputEvent("input", {
+      bubbles: true,
+      inputType: "insertFromPaste",
+      data: value
+    }));
+    return true;
+  }
+
+  function handleCryptoPaste(event) {
+    const address = globalThis.BrowserMonitorPageGuard?.findWalletAddress(event.clipboardData?.getData("text/plain"));
+    if (!address) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const target = event.target;
+    sha256(address.value).then(async (fingerprint) => {
+      let result;
+      if (cryptoGuardCopy?.expiresAt > Date.now()) {
+        result = {
+          known: true,
+          matches: cryptoGuardCopy.family !== address.family || cryptoGuardCopy.fingerprint === fingerprint
+        };
+      } else {
+        result = await chrome.runtime.sendMessage({
+          kind: "verifyCryptoGuardPaste",
+          fingerprint,
+          family: address.family
+        }).catch(() => ({ known: false, matches: true }));
+      }
+      if (result?.known && result.matches === false) {
+        showPageNotice("cryptoMismatch");
+        return;
+      }
+      if (!insertPastedText(target, address.value)) showPageNotice("cryptoFailed");
+    }).catch(() => showPageNotice("cryptoFailed"));
+  }
+
+  function mediaIdentityText() {
+    return document.querySelector("meta[property='og:title']")?.content
+      || document.querySelector("main h1, article h1, h1")?.textContent
+      || document.title;
+  }
+
+  function mediaDisplayTitle() {
+    return String(mediaIdentityText() ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 140);
+  }
+
+  function structuredMediaTypes() {
+    const found = new Set();
+    for (const script of [...document.querySelectorAll("script[type='application/ld+json']")].slice(0, 10)) {
+      const source = String(script.textContent ?? "").slice(0, 80_000);
+      for (const match of source.matchAll(/"@type"\s*:\s*"(VideoObject|Movie|TVEpisode|TVSeries|Episode)"/gi)) {
+        found.add(match[1]);
+      }
+    }
+    return [...found];
+  }
+
+  function continueWatchingClassification(video) {
+    const rect = video.getBoundingClientRect();
+    const width = Math.max(rect.width, video.videoWidth || 0, Number(video.getAttribute("width")) || 0);
+    const height = Math.max(rect.height, video.videoHeight || 0, Number(video.getAttribute("height")) || 0);
+    const playerHint = Boolean(video.closest([
+      ".html5-video-player",
+      ".video-js",
+      ".jwplayer",
+      ".plyr",
+      ".shaka-video-container",
+      "[data-player]",
+      "[class*='video-player' i]",
+      "[class*='movie-player' i]"
+    ].join(",")));
+    return globalThis.BrowserMonitorPageGuard?.classifyLongFormMedia({
+      hostname: location.hostname,
+      pathname: location.pathname,
+      duration: video.duration,
+      width,
+      height,
+      videoCount: document.querySelectorAll("video").length,
+      ogType: document.querySelector("meta[property='og:type']")?.content ?? "",
+      structuredTypes: structuredMediaTypes(),
+      playerHint,
+      advertisement: isAdvertisementVideo(video),
+      title: mediaDisplayTitle()
+    }) ?? { supported: false, reason: "guard-unavailable" };
+  }
+
+  function formatPlaybackTime(seconds) {
+    const total = Math.max(0, Math.floor(seconds));
+    const minutes = Math.floor(total / 60);
+    const remainder = String(total % 60).padStart(2, "0");
+    return `${minutes}:${remainder}`;
+  }
+
+  function mediaPresentation(title) {
+    const types = structuredMediaTypes().map((value) => value.toLowerCase());
+    const params = new URLSearchParams(location.search);
+    const season = params.get("season") || params.get("s");
+    const episodeNumber = params.get("episode") || params.get("ep") || params.get("e");
+    const titleEpisode = title.match(/\b(s\d{1,2}\s*e\d{1,3}|\d{1,3}\s*(?:серия|эпизод)|(?:серия|эпизод)\s*\d{1,3})\b/i)?.[1] ?? "";
+    const episode = season && episodeNumber
+      ? `S${season} · E${episodeNumber}`
+      : episodeNumber
+        ? `E${episodeNumber}`
+        : titleEpisode.replace(/\s+/g, " ").trim();
+    const episodic = types.some((value) => ["tvepisode", "tvseries", "episode"].includes(value))
+      || Boolean(episode)
+      || /\b(?:series|serial|season|episode|серия|сезон|эпизод)\b/i.test(`${title} ${location.pathname}`);
+    const movie = types.includes("movie")
+      || /\b(?:film|movie|фильм|кино)\b/i.test(`${title} ${location.pathname}`);
+    return {
+      episode,
+      mediaType: episodic ? "episode" : movie ? "movie" : "video"
+    };
+  }
+
+  function continueWatchingSource(title) {
+    return globalThis.BrowserMonitorPageGuard?.mediaIdentitySource(
+      location.hostname,
+      title,
+      location.pathname,
+      location.search
+    );
+  }
+
+  async function continueWatchingIdentity(source) {
+    return source && source.length >= 5 ? sha256(`media:${source}`) : "";
+  }
+
+  function restoreContinueWatchingPosition(video, position) {
+    const apply = () => {
+      if (!video.isConnected || video.ended || video.currentTime >= 5) return;
+      try {
+        if (typeof video.fastSeek === "function") video.fastSeek(position);
+        else video.currentTime = position;
+      } catch {
+        try { video.currentTime = position; } catch {}
+      }
+    };
+    apply();
+    const onMediaReady = () => apply();
+    video.addEventListener("loadeddata", onMediaReady, { once: true });
+    video.addEventListener("canplay", onMediaReady, { once: true });
+    setTimeout(apply, 250);
+    setTimeout(apply, 1_000);
+  }
+
+  async function initializeContinueWatching(video) {
+    if (!(video instanceof HTMLVideoElement) || isAdvertisementVideo(video)) return;
+    if (!Number.isFinite(video.duration) || video.duration < 120) return;
+    const classification = continueWatchingClassification(video);
+    if (!classification.supported) return;
+    const title = mediaDisplayTitle();
+    const source = continueWatchingSource(title);
+    if (continueWatchingVideos.get(video)?.source === source) return;
+    const identity = await continueWatchingIdentity(source);
+    if (!identity || !video.isConnected) return;
+    if (continueWatchingVideos.get(video)?.identity === identity) return;
+    const presentation = mediaPresentation(title);
+    const state = { identity, source, lastSavedAt: 0, title, ...presentation };
+    continueWatchingVideos.set(video, state);
+    const saved = await chrome.runtime.sendMessage({
+      kind: "getContinueWatchingPosition",
+      identity
+    }).catch(() => null);
+    const position = Number(saved?.position);
+    if (Number.isFinite(position) && position > 10 && position < video.duration - 20 && video.currentTime < 5) {
+      restoreContinueWatchingPosition(video, position);
+      showContinueWatchingNotice(video, {
+        title,
+        time: formatPlaybackTime(position),
+        url: location.href
+      });
+    }
+  }
+
+  function saveContinueWatching(video, { completed = false, force = false } = {}) {
+    const state = continueWatchingVideos.get(video);
+    if (!state || !Number.isFinite(video.duration) || video.duration < 120) return;
+    const now = Date.now();
+    if (!force && !completed && now - state.lastSavedAt < 15_000) return;
+    state.lastSavedAt = now;
+    const position = Number(video.currentTime);
+    chrome.runtime.sendMessage({
+      kind: "setContinueWatchingPosition",
+      identity: state.identity,
+      position,
+      duration: video.duration,
+      title: state.title,
+      episode: state.episode,
+      mediaType: state.mediaType,
+      pageURL: location.href,
+      completed: completed || position >= video.duration - 20
+    }).catch(() => {});
+  }
+
+  async function initializeAndSaveContinueWatching(video) {
+    await initializeContinueWatching(video);
+    saveContinueWatching(video, { force: true });
+  }
+
+  async function refreshAndSaveContinueWatching(video) {
+    await initializeContinueWatching(video);
+    saveContinueWatching(video);
+  }
+
+  function scheduleContinueWatchingIdentityCheck() {
+    clearTimeout(continueWatchingIdentityTimer);
+    continueWatchingIdentityTimer = setTimeout(() => {
+      continueWatchingIdentityTimer = null;
+      document.querySelectorAll("video").forEach((video) => {
+        if (video.readyState >= 1) void initializeContinueWatching(video);
+      });
+    }, 120);
+  }
+
+  function pagePrivacySignals() {
+    let firstPartyCookies = 0;
+    let localStorageKeys = 0;
+    let sessionStorageKeys = 0;
+    try { firstPartyCookies = document.cookie ? document.cookie.split(";").filter(Boolean).length : 0; } catch {}
+    try { localStorageKeys = localStorage.length; } catch {}
+    try { sessionStorageKeys = sessionStorage.length; } catch {}
+    return {
+      firstPartyCookies,
+      localStorageKeys,
+      sessionStorageKeys,
+      notificationPermission: typeof Notification === "undefined" ? "unsupported" : Notification.permission,
+      secureContext: window.isSecureContext
+    };
+  }
+
   const ACTIVITY_SAMPLE_MS = 15_000;
   const ACTIVITY_IDLE_MS = 45_000;
   const VIDEO_AD_MARKER = /\b(ad|ads|advert|advertisement|commercial|preroll|midroll|outstream|ima-container)\b/i;
@@ -1220,6 +1802,62 @@
   }, { capture: true });
   document.addEventListener("scroll", noteActivityInteraction, { capture: true, passive: true });
   document.addEventListener("touchstart", noteActivityInteraction, { capture: true, passive: true });
+  document.addEventListener("copy", handleCryptoCopy, true);
+  document.addEventListener("paste", handleCryptoPaste, true);
+  window.addEventListener("browser-monitor-crypto-copy", (event) => {
+    const address = globalThis.BrowserMonitorPageGuard?.detectWalletAddress(event.detail?.value);
+    if (!address) return;
+    void rememberCryptoCopy(address);
+    if (event.detail?.changed) showPageNotice("cryptoCleaned");
+  });
+  window.addEventListener("browser-monitor-crypto-copy-error", () => showPageNotice("cryptoFailed"));
+  document.addEventListener("loadedmetadata", (event) => {
+    if (event.target instanceof HTMLVideoElement) void initializeContinueWatching(event.target);
+  }, true);
+  document.addEventListener("play", (event) => {
+    if (event.target instanceof HTMLVideoElement) void initializeContinueWatching(event.target);
+  }, true);
+  document.addEventListener("timeupdate", (event) => {
+    if (event.target instanceof HTMLVideoElement) void refreshAndSaveContinueWatching(event.target);
+  }, true);
+  document.addEventListener("pause", (event) => {
+    if (event.target instanceof HTMLVideoElement) saveContinueWatching(event.target, { force: true });
+  }, true);
+  document.addEventListener("seeked", (event) => {
+    if (event.target instanceof HTMLVideoElement) void initializeAndSaveContinueWatching(event.target);
+  }, true);
+  document.addEventListener("ended", (event) => {
+    if (event.target instanceof HTMLVideoElement) saveContinueWatching(event.target, { completed: true, force: true });
+  }, true);
+  document.addEventListener("emptied", (event) => {
+    if (event.target instanceof HTMLVideoElement) continueWatchingVideos.delete(event.target);
+  }, true);
+  document.addEventListener("durationchange", (event) => {
+    if (event.target instanceof HTMLVideoElement) void initializeContinueWatching(event.target);
+  }, true);
+  window.addEventListener("pagehide", () => {
+    document.querySelectorAll("video").forEach((video) => saveContinueWatching(video, { force: true }));
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      document.querySelectorAll("video").forEach((video) => saveContinueWatching(video, { force: true }));
+    }
+  });
+  window.addEventListener("popstate", scheduleContinueWatchingIdentityCheck);
+  const continueWatchingIdentityObserver = new MutationObserver(scheduleContinueWatchingIdentityCheck);
+  const observeContinueWatchingIdentity = () => {
+    if (document.head) {
+      continueWatchingIdentityObserver.observe(document.head, {
+        attributes: true,
+        attributeFilter: ["content"],
+        characterData: true,
+        childList: true,
+        subtree: true
+      });
+    }
+  };
+  if (document.head) observeContinueWatchingIdentity();
+  else document.addEventListener("DOMContentLoaded", observeContinueWatchingIdentity, { once: true });
   setInterval(recordActivitySample, ACTIVITY_SAMPLE_MS);
   document.addEventListener("play", (event) => {
     if (protectionSettings.autoplayBlockingEnabled && !pageHasUserGesture) {
@@ -1232,6 +1870,7 @@
       protectionScanTimer = null;
       protectionObserver?.disconnect();
       historyPrivacyObserver?.disconnect();
+      searchProtectionObserver?.disconnect();
       return;
     }
     if (protectionObserver) {
@@ -1243,6 +1882,10 @@
       historyPrivacyObserver.observe(document.documentElement, { childList: true, subtree: true });
       scheduleHistoryPrivacyScan();
     }
+    if (searchProtectionObserver) {
+      searchProtectionObserver.observe(document.documentElement, { childList: true, subtree: true });
+      scheduleSearchProtectionScan();
+    }
   });
 
   chrome.storage.local.get({
@@ -1253,7 +1896,9 @@
     browserProtectionSettings: protectionSettings,
     temporarySitePauses: {},
     customSubscriptionCosmeticFilters: [],
-    imageSwapCustomImages: []
+    imageSwapCustomImages: [],
+    linkSafetyAllowedDomains: [],
+    uiPreferences: { language: null, theme: "system" }
   }).then(({
     extensionEnabled: storedExtensionEnabled,
     monitoringEnabled,
@@ -1262,7 +1907,9 @@
     browserProtectionSettings,
     temporarySitePauses: pauses,
     customSubscriptionCosmeticFilters,
-    imageSwapCustomImages: storedCustomImages
+    imageSwapCustomImages: storedCustomImages,
+    linkSafetyAllowedDomains,
+    uiPreferences
   }) => {
     temporarySitePauses = pauses;
     extensionEnabled = storedExtensionEnabled !== false;
@@ -1274,6 +1921,14 @@
     updateEnabled(effectiveMonitoringEnabled(configuredMonitoringEnabled));
     applyProtectionSettings(browserProtectionSettings);
     configureHistoryPrivacy(historyPrivacySettings);
+    configureSearchProtection({
+      enabled: extensionEnabled && browserProtectionSettings?.searchProtectionEnabled !== false,
+      language: uiPreferences?.language || (navigator.language?.toLowerCase().startsWith("ru") ? "ru" : "en"),
+      trustedDomains: linkSafetyAllowedDomains
+    });
+    document.querySelectorAll("video").forEach((video) => {
+      if (video.readyState >= 1) void initializeContinueWatching(video);
+    });
     chrome.runtime.sendMessage({ kind: "getEcoMode" }).then((response) => {
       setEcoMode(Boolean(response?.enabled));
     }).catch(() => {});
@@ -1286,16 +1941,42 @@
       updateEnabled(effectiveMonitoringEnabled(configuredMonitoringEnabled));
       applyProtectionSettings(configuredProtectionSettings);
       configureHistoryPrivacy({ enabled: historyPrivacyEnabled, domains: historyPrivacyDomains });
+      configureSearchProtection({
+        enabled: extensionEnabled && configuredProtectionSettings?.searchProtectionEnabled !== false,
+        language: searchProtectionLanguage,
+        trustedDomains: [...searchProtectionHosts]
+      });
     }
     if (areaName === "local" && changes.historyPrivacySettings) {
       configureHistoryPrivacy(changes.historyPrivacySettings.newValue ?? {});
+    }
+    if (areaName === "local" && changes.linkSafetyAllowedDomains) {
+      configureSearchProtection({
+        enabled: extensionEnabled,
+        language: searchProtectionLanguage,
+        trustedDomains: changes.linkSafetyAllowedDomains.newValue ?? []
+      });
+    }
+    if (areaName === "local" && changes.uiPreferences) {
+      configureSearchProtection({
+        enabled: extensionEnabled,
+        language: changes.uiPreferences.newValue?.language
+          || (navigator.language?.toLowerCase().startsWith("ru") ? "ru" : "en"),
+        trustedDomains: [...searchProtectionHosts]
+      });
     }
     if (areaName === "local" && changes.monitoringEnabled) {
       configuredMonitoringEnabled = changes.monitoringEnabled.newValue !== false;
       updateEnabled(effectiveMonitoringEnabled(configuredMonitoringEnabled));
     }
     if (areaName === "local" && changes.browserProtectionSettings) {
-      applyProtectionSettings(changes.browserProtectionSettings.newValue ?? {});
+      configuredProtectionSettings = { ...protectionSettings, ...(changes.browserProtectionSettings.newValue ?? {}) };
+      applyProtectionSettings(configuredProtectionSettings);
+      configureSearchProtection({
+        enabled: extensionEnabled && configuredProtectionSettings.searchProtectionEnabled !== false,
+        language: searchProtectionLanguage,
+        trustedDomains: [...searchProtectionHosts]
+      });
     }
     if (areaName === "local" && changes.contentBlockingEnabled) {
       configuredContentBlockingEnabled = changes.contentBlockingEnabled.newValue !== false;
@@ -1325,6 +2006,10 @@
     if (message?.kind === "playActivationAnimation") {
       playActivationAnimation();
       sendResponse({ ok: true });
+      return false;
+    }
+    if (message?.kind === "getPagePrivacySignals") {
+      sendResponse(pagePrivacySignals());
       return false;
     }
     if (message?.kind !== "getMetrics") return false;

@@ -1,93 +1,30 @@
 # Features
 
-## Реализовано
+Only implemented user-facing capabilities are listed here.
 
-### Защита и блокировка
+| Area | Available capability |
+| --- | --- |
+| Blocking | EasyList, EasyPrivacy, RU AdList, cryptomining rules, cosmetic filters, site exceptions, and manual element blocking. |
+| Page noise | Cookie banner and intrusive prompt suppression, autoplay and floating video controls, and reversible Eco Mode. |
+| Video | Protection on supported video sites, optional SponsorBlock, Picture-in-Picture, and long-form HTML5 video resume. |
+| Link Safety | Local warnings for suspicious external links, an allowlist, and a dedicated warning page. |
+| Search protection | Risk labels in Google, Bing, Yandex, DuckDuckGo, and Yahoo results. |
+| Crypto Guard | Invisible-character cleanup and copy/paste substitution protection for recognized wallet addresses. |
+| Privacy receipt | Local visit summary: prevented actions, third-party domains, and page-accessible cookies and storage. |
+| History | Hiding selected domains from Chrome history and supported search suggestions after permission is granted. |
+| Site data | Automatic cookie and origin storage removal after the last tab for a selected domain closes. |
+| Statistics | Local blocking and activity reports: visits and active, reading, and video time. |
+| Site Activity | Tab activity explanation and a map of recent cross-domain redirects. |
+| Tab tools | Duplicate-tab detection and closing, plus a configurable popup tool order. |
+| Feedback | Local report draft and prefilled email opening only after explicit user action. |
+| Interface | Popup, Settings, Statistics, Activity, and warning pages in English and Russian. |
 
-- Declarative Net Request блокировка EasyList, EasyPrivacy и RU AdList network rules.
-- Cryptomining rules и blocker metadata.
-- Cosmetic filtering для рекламных и социальных элементов.
-- Cookie-banner и intrusive prompt suppression.
-- Site exceptions и custom filters.
-- Контекстное меню позволяет исключить текущий сайт из блокировщика и фильтров с последующей перезагрузкой страницы.
+## Main limitations
 
-### Video и distraction controls
+- Link and search result protection relies on heuristics.
+- Cosmetic filtering and video controls depend on each site's structure.
+- Video resume works only with recognized long-form HTML5 video.
+- Activity analytics excludes background and inactive tabs.
+- SponsorBlock uses an external community source only when enabled.
 
-- Специализированные YouTube/Rutube video-ad controls.
-- Optional SponsorBlock community segment skipping.
-- Autoplay и floating video controls.
-- Picture-in-Picture.
-
-### Link Safety
-
-- Предупреждение перед открытием подозрительных ссылок.
-- Локальные эвристики для shorteners, lookalike domains, punycode, redirects и risky social-feed destinations.
-- Same-origin ссылки остаются под управлением сайта; Link Safety проверяет переходы за пределы текущего origin и не задерживает внутреннюю SPA-навигацию.
-- Отдельная warning page с CSS/JS.
-
-### Локальная аналитика
-
-- Popup показывает локальное состояние расширения и статистику.
-- Statistics page показывает today и rolling seven-day window.
-- Top sites и top resources для локальных блокировок.
-- Отдельное окно аналитики посещений показывает TOP доменов, visits, активное и среднее время за день/неделю/месяц.
-- График разделяет общее активное время, чтение и просмотр content-video.
-- «Счётчик реальности» сравнивает время с рабочим периодом: 8 часов для дня, 40 часов для недели и фактическое число будних дней месяца × 8 часов; дополнительно показывает помодоро, кофе-брейки и полнометражные фильмы.
-- Фоновая или неиспользуемая вкладка не учитывается; полные URL и заголовки страниц не сохраняются.
-- Окно аналитики полностью переключается между английским и русским вместе с общими настройками языка.
-- В popup аналитика посещений открывается только верхней иконкой; отдельная крупная плитка Site Activity удалена.
-- Scoring logic вынесена в `scoring.js`.
-
-### Управление вкладками и страницами
-
-- Объяснение активности открытых вкладок.
-- Reversible Eco Mode controls.
-- Ограничение фоновой нагрузки: скрытые вкладки не получают постоянные полные DOM-сканы защиты, Eco Mode объединяет частые обновления, а video fallback оставлен только для поддерживаемых video-сайтов.
-- Контекстная команда блокирует элемент под правым кликом; если подходящий элемент не определён, запускается визуальный Element picker.
-- Новые ручные cosmetic rules ограничены доменом сайта и не скрывают похожие элементы на других ресурсах.
-- Image Swap через web-accessible SVG assets.
-
-### Privacy-инструменты
-
-- Optional history permission для скрытия выбранных доменов из локальной Chrome history и поддерживаемых search suggestions.
-- Optional cookie/download/clipboard permissions для отдельных связанных возможностей.
-- Optional cookie export.
-
-### Обратная связь
-
-- Кнопки в popup и Settings открывают форму запроса нового инструмента или сообщения об ошибке.
-- Компактная footer-иконка рядом с Refresh открывает быстрый репорт проблемы фильтров. Она подставляет URL и заголовок текущей страницы, а при продолжении добавляет версию расширения, состояние защиты, исключения/паузу и ключевые включённые фильтры.
-- Форма принимает email, описание до 5000 символов и необязательный PNG/JPEG/WebP screenshot до 2 МБ.
-- Указанный email запоминается локально для следующих репортов.
-- До подтверждения данные находятся в `chrome.storage.local`; кнопка отправки открывает заполненный GitHub issue, где пользователь проверяет запрос и вручную прикрепляет выбранный screenshot.
-- Ничего не отправляется разработчику в фоне.
-
-### Локализация и публикация
-
-- Английские и русские строки интерфейса.
-- README, privacy policy, release checklist, store listing и release notes.
-- ZIP-install flow через Chrome Developer mode / Load unpacked.
-
-## Реализовано с ограничениями
-
-- Network-блокировка ограничена лимитами и моделью Chrome Declarative Net Request.
-- Cosmetic controls зависят от DOM конкретного сайта и могут требовать обновления селекторов.
-- Link Safety является локальной эвристикой, а не гарантированной проверкой безопасности.
-- SponsorBlock зависит от внешнего community-источника, если пользователь включает эту возможность.
-- Event-driven DOM detection может применить generic video-ad исправление после появления соответствующего media/ad-узла; YouTube/Rutube дополнительно имеют редкий fallback-поллинг.
-- Optional permissions должны запрашиваться только при использовании соответствующего инструмента.
-- Классификация чтения и видео основана на локальных DOM-эвристиках и может не распознать нестандартный canvas/player или короткий текстовый материал.
-
-## Не является текущей функцией
-
-- Backend account, cloud sync или developer-operated analytics отсутствуют.
-- Расширение не является антивирусом.
-- Расширение не выполняет полную forensic-проверку ссылок или файлов.
-- Расширение не должно загружать удалённый исполняемый код.
-
-## Связанные материалы
-
-- [[Product]]
-- [[Architecture]]
-- [[Decisions]]
-- [[Opportunities]]
+See [[Architecture]] for technical details and [[Opportunities]] for future ideas.

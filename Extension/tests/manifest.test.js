@@ -8,7 +8,7 @@ test("manifest is valid Manifest V3 JSON", () => {
 
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.name, "Browser Monitor");
-  assert.equal(manifest.version, "1.0.1");
+  assert.equal(manifest.version, "1.1.0");
   assert.ok(!("key" in manifest));
   assert.equal(manifest.background.type, "module");
   assert.ok(!manifest.permissions.includes("nativeMessaging"));
@@ -19,7 +19,7 @@ test("manifest is valid Manifest V3 JSON", () => {
   assert.ok(!manifest.permissions.includes("cookies"));
   assert.ok(!manifest.permissions.includes("downloads"));
   assert.ok(!manifest.permissions.includes("clipboardWrite"));
-  assert.deepEqual(manifest.optional_permissions, ["clipboardWrite", "cookies", "downloads", "history"]);
+  assert.deepEqual(manifest.optional_permissions, ["browsingData", "clipboardWrite", "cookies", "downloads", "history"]);
   assert.ok(manifest.permissions.includes("contextMenus"));
   assert.ok(manifest.permissions.includes("favicon"));
   for (const permission of ["bookmarks", "sidePanel", "tabGroups"]) {
@@ -37,6 +37,24 @@ test("manifest is valid Manifest V3 JSON", () => {
   assert.ok(Object.values(manifest.icons).every((path) => existsSync(new URL(`../${path}`, import.meta.url))));
   assert.deepEqual(Object.keys(manifest.action.default_icon), ["16", "32"]);
   assert.deepEqual(manifest.options_ui, { page: "options.html", open_in_tab: true });
+  assert.deepEqual(manifest.content_scripts[0].js, ["page-guard.js", "content.js"]);
+  assert.ok(existsSync(new URL("../page-guard.js", import.meta.url)));
+  assert.deepEqual(manifest.content_scripts[1].js, ["page-guard.js", "video-resume-frame.js"]);
+  assert.equal(manifest.content_scripts[1].all_frames, true);
+  assert.ok(existsSync(new URL("../video-resume-frame.js", import.meta.url)));
+  const frameResume = readFileSync(new URL("../video-resume-frame.js", import.meta.url), "utf8");
+  assert.match(frameResume, /window === window\.top/);
+  assert.match(frameResume, /pagehide/);
+  assert.match(frameResume, /seeked/);
+  assert.match(frameResume, /visibilitychange/);
+  assert.match(frameResume, /document\.addEventListener\("play"/);
+  assert.match(frameResume, /trackedVideos\.get\(video\)\?\.source === source/);
+  assert.match(frameResume, /force: true/);
+  assert.match(frameResume, /getContinueWatchingPosition/);
+  assert.match(frameResume, /setContinueWatchingPosition/);
+  assert.deepEqual(manifest.content_scripts[2].js, ["crypto-guard-main.js"]);
+  assert.equal(manifest.content_scripts[2].world, "MAIN");
+  assert.ok(existsSync(new URL("../crypto-guard-main.js", import.meta.url)));
   for (const path of [
     "link-safety.js",
     "link-warning.html",
@@ -71,15 +89,29 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(localization, /ru:\s*\{/);
   assert.match(localization, /en:\s*\{/);
   assert.match(localization, /filtersCount:\s*"\{network\} \+ \{cosmetic\} фильтров"/);
+  assert.match(popupHTML, /<link rel="stylesheet" href="popup\.css">/);
   assert.match(popupHTML, /data-i18n="appName"/);
   assert.match(popupHTML, /id="settings-button"/);
   assert.match(popupHTML, /id="header-statistics-button"/);
   assert.match(popupHTML, /id="header-activity-button"/);
   assert.doesNotMatch(popupHTML, /id="activity-button"|id="activity-tab-button"/);
   assert.match(popupHTML, /id="feedback-button"/);
+  assert.match(popupHTML, /id="privacy-receipt-button"/);
+  assert.match(popupHTML, /id="watch-history-button"/);
+  assert.match(popupHTML, /id="tool-strip"[^>]*tabindex="0"/);
+  assert.match(popupHTML, /id="previous-tools"/);
+  assert.match(popupHTML, /id="next-tools"/);
+  assert.match(popupHTML, /aria-roledescription="carousel"/);
+  assert.doesNotMatch(popupHTML, /id="tool-scroll-track"|id="tool-scroll-thumb"/);
+  assert.match(popupHTML, /id="watch-history-view"/);
+  assert.match(popupHTML, /id="close-watch-history"/);
+  assert.match(popupHTML, /id="privacy-receipt"/);
+  assert.match(popupHTML, /id="site-action-status"/);
+  assert.match(popupHTML, /aria-controls="privacy-receipt"/);
   assert.doesNotMatch(popupHTML, /id="report-site-button"/);
   assert.match(popupHTML, /class="footer-icon-button"/);
-  assert.match(popupHTML, /id="extension-toggle"/);
+  assert.match(popupHTML, /id="extension-toggle"[^>]*checked/);
+  assert.match(popupHTML, /id="blocker-toggle"[^>]*checked/);
   assert.match(popupHTML, /class="brand-icon"/);
   assert.doesNotMatch(popupHTML, />MACCLEANER</);
   assert.match(popupHTML, /class="tool-button"/);
@@ -89,13 +121,41 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.doesNotMatch(popupHTML, /id="blocked-today"/);
   assert.match(popupJS, /chrome\.permissions\.request\(\{ permissions: \["cookies"\]/);
   assert.match(popupJS, /const MAX_VISIBLE_TABS = 4;/);
+  assert.match(popupJS, /kind: "getSitePrivacyReceipt"/);
+  assert.match(popupJS, /kind: "getContinueWatchingList"/);
+  assert.match(popupJS, /toolStrip\.addEventListener\("wheel"/);
+  assert.match(popupJS, /const TOOLS_PER_PAGE = 4/);
+  assert.match(popupJS, /scrollToToolPage/);
+  assert.match(popupJS, /previousTools\.addEventListener\("click"/);
+  assert.match(popupJS, /nextTools\.addEventListener\("click"/);
+  assert.match(popupJS, /animateToolShift/);
+  assert.match(popupJS, /--tool-drag-x/);
+  assert.doesNotMatch(popupJS, /toolScrollTrack|updateToolScrollIndicator/);
+  assert.doesNotMatch(popupJS, /setTimeout\(\(\) => document\.body\.classList\.remove\("preload"\)/);
+  assert.match(popupJS, /chrome\.tabs\.create\(\{ url: entry\.url, active: true \}\)/);
+  assert.match(popupJS, /sitePausedNotice/);
   assert.match(popupCSS, /body\s*\{[^}]*width:\s*420px[^}]*height:\s*600px[^}]*overflow:\s*hidden/s);
   assert.doesNotMatch(popupCSS, /main\s*\{[^}]*overflow:\s*auto/s);
   assert.match(popupCSS, /#site-control-action\s*\{[^}]*width:\s*78px/s);
-  assert.match(popupCSS, /\.tool-button\s*\{[^}]*flex:\s*1 1 0/s);
+  assert.match(popupCSS, /\.tool-strip\s*\{[^}]*overflow-x:\s*auto[^}]*scrollbar-width:\s*none/s);
+  assert.match(popupCSS, /\.tool-button\s*\{[^}]*flex:\s*0 0 calc\(\(100% - 15px\) \/ 4\)/s);
+  assert.match(popupCSS, /\.tool-button:nth-of-type\(4n \+ 1\)/);
+  assert.match(popupCSS, /\.tool-carousel:hover \.tool-nav/);
+  assert.match(popupCSS, /\.tool-nav\s*\{[^}]*border:\s*0[^}]*background:\s*transparent/s);
+  assert.match(popupCSS, /\.tool-nav svg\s*\{[^}]*stroke-width:\s*1\.35/s);
+  assert.match(popupCSS, /\.tool-button\.dragging\s*\{[^}]*scale\(1\.06\)/s);
+  assert.doesNotMatch(popupHTML, /id="utilities-title"/);
+  assert.match(popupHTML, /id="previous-tools"[^>]*>\s*<svg/s);
+  assert.match(popupHTML, /id="next-tools"[^>]*>\s*<svg/s);
+  assert.match(popupCSS, /\.duplicates-list\s*\{[^}]*flex:\s*1[^}]*overflow-y:\s*auto/s);
   assert.match(popupCSS, /\.eco-button\s*\{[^}]*width:\s*52px/s);
   assert.match(popupCSS, /\.protection-detail\s*\{[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis/s);
   assert.match(popupCSS, /\.app-header\s*\{[^}]*padding:\s*20px 30px 17px 20px/s);
+  assert.match(
+    popupCSS,
+    /\.preload \.toggle-control input\s*\{[^}]*visibility:\s*hidden/s,
+    "Toggle state must stay hidden until popup initialization finishes"
+  );
   assert.doesNotMatch(serviceWorker, /sendNativeMessage/, "One-shot native messaging leaks host processes in Chrome");
   assert.doesNotMatch(serviceWorker, /onRuleMatchedDebug|recentBlockedResources/);
   assert.match(popupJS, /kind: "playActivationAnimation"/);
@@ -106,6 +166,9 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(serviceWorker, /Exclude this site from blocking/);
   assert.match(serviceWorker, /useContextTarget: true/);
   assert.match(contentScript, /selectorForCurrentSite/);
+  assert.match(contentScript, /handleCryptoCopy/);
+  assert.match(contentScript, /initializeContinueWatching/);
+  assert.match(contentScript, /configureSearchProtection/);
   assert.match(contentScript, /contextMenuTarget/);
   assert.match(contentScript, /browser-monitor-activation-overlay/);
   assert.match(contentScript, /__browserMonitorContentLoaded/);
@@ -127,6 +190,12 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.doesNotMatch(contentScript, /const hasVideo = queryVideoRoots\("video"\)\.length > 0/);
   assert.match(serviceWorker, /BLOCKING_STATISTICS_FLUSH_DELAY_MS = 2_000/);
   assert.match(serviceWorker, /BLOCKING_STATISTICS_BATCH_SIZE = 500/);
+  assert.match(serviceWorker, /chrome\.webRequest\.onBeforeRequest/);
+  assert.match(serviceWorker, /getSitePrivacyReceipt/);
+  assert.match(serviceWorker, /verifyCryptoGuardPaste/);
+  assert.match(serviceWorker, /CONTINUE_WATCHING_KEY/);
+  assert.match(serviceWorker, /getContinueWatchingList/);
+  assert.match(serviceWorker, /mediaType/);
   assert.match(serviceWorker, /displayActionCountAsBadgeText:\s*Boolean\(enabled\)/);
   assert.match(serviceWorker, /const previous = await extensionEnabledStorage\(\)/);
   assert.match(popupHTML, /id="statistics-button"/);
@@ -167,6 +236,9 @@ test("options page exposes separate settings panels without reports", () => {
   assert.match(html, /id="linkSafetyBlockedDomains"/);
   assert.match(html, /id="historyPrivacyEnabled"/);
   assert.match(html, /id="historyPrivacyDomains"/);
+  assert.match(html, /data-i18n="cryptoGuardTitle"/);
+  assert.match(html, /data-i18n="continueWatchingTitle"/);
+  assert.doesNotMatch(html, /id="cryptoGuardEnabled"/);
   assert.match(script, /permissions\.request\(\{ permissions: \["history"\]/);
   assert.match(script, /kind: "setLinkSafetySettings"/);
   assert.match(script, /kind: "setHistoryPrivacySettings"/);
@@ -207,7 +279,7 @@ test("blocking statistics use a dedicated localized window", () => {
   assert.match(css, /grid-template-columns:\s*1fr 1fr/);
 });
 
-test("link warning page exposes continue and allow-domain actions", () => {
+test("link warning page exposes compact safe-first actions", () => {
   const html = readFileSync(new URL("../link-warning.html", import.meta.url), "utf8");
   const css = readFileSync(new URL("../link-warning.css", import.meta.url), "utf8");
   const script = readFileSync(new URL("../link-warning.js", import.meta.url), "utf8");
@@ -216,11 +288,20 @@ test("link warning page exposes continue and allow-domain actions", () => {
   assert.match(html, /id="continue-button"/);
   assert.match(html, /id="allow-button"/);
   assert.match(html, /id="destination-domain"/);
+  assert.doesNotMatch(html, /id="source-domain"/);
+  assert.doesNotMatch(html, /Browser Monitor<\/span>/);
+  assert.doesNotMatch(html, /id="warning-risk"/);
+  assert.doesNotMatch(html, /id="reason-list"/);
+  assert.match(html, /class="primary" type="button">Go back/);
   assert.match(script, /allowLinkSafetyDomain/);
   assert.match(script, /action === "block"/);
-  assert.match(script, /Последняя проверка перед переходом :\)/);
+  assert.match(script, /isRussian/);
+  assert.match(script, /Не вводите пароль, seed-фразу/);
   assert.match(css, /\.warning-panel/);
+  assert.match(css, /\.signal svg/);
   assert.match(buildScript, /"link-warning\.html"/);
+  assert.match(buildScript, /"site-tools\.js"/);
+  assert.match(buildScript, /module is missing from the package/);
 });
 
 test("activity and feedback surfaces are bilingual and privacy explicit", () => {
@@ -234,9 +315,12 @@ test("activity and feedback surfaces are bilingual and privacy explicit", () => 
   assert.match(feedbackHTML, /type="email"/);
   assert.match(feedbackHTML, /value="site"/);
   assert.match(feedbackHTML, /accept="image\/png,image\/jpeg,image\/webp"/);
-  assert.match(feedback, /github\.com\/Jas952\/BrowserMonitor\/issues\/new/);
+  assert.match(feedback, /FEEDBACK_RECIPIENT_EMAIL/);
+  assert.match(feedback, /mailto:/);
+  assert.doesNotMatch(feedback, /github\.com\/Jas952\/BrowserMonitor\/issues\/new/);
   assert.match(feedback, /MAX_OUTBOX_BYTES = 6 \* 1024 \* 1024/);
   assert.match(feedback, /Nothing is sent silently/);
+  assert.match(feedback, /mail app/);
   assert.match(feedback, /kind: "getContentBlockingState"/);
   assert.match(feedback, /kind: "getBrowserProtectionSettings"/);
   assert.match(feedback, /Site filter report/);

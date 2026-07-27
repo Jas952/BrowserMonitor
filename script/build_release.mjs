@@ -32,6 +32,7 @@ const rootFiles = [
   "activity-page.js",
   "content.js",
   "cookies.js",
+  "crypto-guard-main.js",
   "filter-parser.js",
   "feedback.css",
   "feedback.html",
@@ -44,15 +45,18 @@ const rootFiles = [
   "options.css",
   "options.html",
   "options.js",
+  "page-guard.js",
   "popup.css",
   "popup.html",
   "popup.js",
   "scoring.js",
   "service-worker.js",
+  "site-tools.js",
   "statistics.js",
   "statistics.css",
   "statistics.html",
-  "statistics-page.js"
+  "statistics-page.js",
+  "video-resume-frame.js"
 ];
 
 rmSync(distDirectory, { recursive: true, force: true });
@@ -92,6 +96,13 @@ for (const file of scripts) {
   const source = readFileSync(join(stagingDirectory, file), "utf8");
   assert.doesNotMatch(source, /\beval\s*\(|\bnew\s+Function\s*\(/, `${file} contains dynamic code execution`);
   assert.doesNotMatch(source, /onRuleMatchedDebug|declarativeNetRequestFeedback/, `${file} contains a debug-only API`);
+  for (const match of source.matchAll(/\bfrom\s+["'](\.[^"']+)["']/g)) {
+    const dependency = resolve(dirname(join(stagingDirectory, file)), match[1]);
+    assert.ok(
+      existsSync(dependency),
+      `${file} imports ${match[1]}, but that module is missing from the package`
+    );
+  }
 }
 
 const zip = spawnSync("zip", ["-X", "-q", "-r", archivePath, "."], {

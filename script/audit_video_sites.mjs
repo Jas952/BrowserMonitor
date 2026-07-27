@@ -11,9 +11,15 @@ assert.ok(chromeBinary && existsSync(chromeBinary), "Set BROWSER_MONITOR_CHROME_
 
 const allSites = [
   { key: "youtube", name: "YouTube", url: "https://www.youtube.com/watch?v=SElZABp5M3U", waitMS: 14_000 },
-  { key: "rutube", name: "Rutube", url: "https://rutube.ru/video/8c316f529b44d17d4c8a03c9b23cc7c5/", waitMS: 14_000 },
+  { key: "rutube", name: "Rutube", url: "https://rutube.ru/video/cff68bd51575253369a9cf3e9c573d5d/", waitMS: 14_000 },
   { key: "lordfilm", name: "Lordfilm — Silo", url: "https://lordfilm-baza.info/2914-silo.html", waitMS: 16_000 },
-  { key: "lordfilm-bigbang", name: "Lordfilm — The Big Bang Theory", url: "https://bigbangtheory-lordfilm.ru/", waitMS: 18_000 }
+  { key: "lordfilm-bigbang", name: "Lordfilm — The Big Bang Theory", url: "https://bigbangtheory-lordfilm.ru/", waitMS: 18_000 },
+  {
+    key: "lordserial-himym",
+    name: "LordSerial — How I Met Your Mother",
+    url: "https://kak-ya-vstretil-vashu-mamu-lordserial.ru/",
+    waitMS: 18_000
+  }
 ];
 const requestedSite = process.env.BROWSER_MONITOR_AUDIT_SITE || "";
 const sites = requestedSite ? allSites.filter((site) => site.key === requestedSite) : allSites;
@@ -244,6 +250,99 @@ async function auditSite(devToolsPort, site, index) {
 
   const before = await evaluate(session, pageProbe);
   const childContextsBefore = await probeChildContexts(session);
+  let continueWatchingTest = null;
+  if (site.key === "lordserial-himym") {
+    const playerContext = childContextsBefore.find((entry) => entry.origin === "https://api.namy.ws" && entry.state?.videos?.length);
+    assert.ok(playerContext, "LordSerial external player context was not found");
+    await evaluateContext(session, playerContext.contextId, `(() => {
+      const video = document.querySelector('video');
+      if (!video) return false;
+      video.muted = true;
+      video.play().catch(() => {});
+      return true;
+    })()`);
+    await wait(8_000);
+    const injectedPosition = await evaluateContext(session, playerContext.contextId, `(() => {
+      const video = document.querySelector('video');
+      if (!video || !Number.isFinite(video.duration)) return null;
+      video.currentTime = 90;
+      video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+      video.dispatchEvent(new Event('seeked', { bubbles: true }));
+      return { position: video.currentTime, duration: video.duration, title: document.title };
+    })()`);
+    assert.ok(injectedPosition?.position >= 89, "Could not inject a playback position into the external player");
+    await wait(1_000);
+    const storedResult = await extensionEvaluate(devToolsPort, globalThis.extensionID, `(async () => {
+      const value = (await chrome.storage.local.get('continueWatching')).continueWatching;
+      return { value: Object.values(value?.entries || {})[0] || null };
+    })()`);
+    const stored = storedResult?.value;
+    assert.ok(stored?.position >= 89, "External player position was not saved");
+    await session.command("Page.reload");
+    await wait(site.waitMS);
+    const reloadedContexts = await probeChildContexts(session);
+    const reloadedPlayer = reloadedContexts.find((entry) => entry.origin === "https://api.namy.ws" && entry.state?.videos?.length);
+    assert.ok(reloadedPlayer, "Reloaded external player context was not found");
+    const restored = await evaluateContext(session, reloadedPlayer.contextId, `(() => {
+      const video = document.querySelector('video');
+      const notice = document.querySelector('#browser-monitor-frame-resume');
+      return {
+        position: video?.currentTime ?? null,
+        duration: video?.duration ?? null,
+        noticeTitle: notice?.dataset.browserMonitorMediaTitle || '',
+        noticeTime: notice?.dataset.browserMonitorMediaTime || ''
+      };
+    })()`);
+    continueWatchingTest = { injectedPosition, stored, restored };
+    assert.equal(restored.noticeTime, "1:30", `External player resume notice was not restored: ${JSON.stringify(continueWatchingTest)}`);
+    assert.ok(restored.position >= 89, `External player position was not restored after reload: ${JSON.stringify(continueWatchingTest)}`);
+  } else if (site.key === "rutube") {
+    await evaluate(session, `(() => {
+      const controls = [...document.querySelectorAll('button,[role="button"]')];
+      const play = controls.find((element) => /play|воспроизвести|смотреть/i.test(
+        element.getAttribute('aria-label') || element.getAttribute('title') || element.textContent || ''
+      ));
+      play?.click();
+      return Boolean(play);
+    })()`);
+    await session.command("Input.dispatchMouseEvent", { type: "mousePressed", x: 720, y: 430, button: "left", clickCount: 1 });
+    await session.command("Input.dispatchMouseEvent", { type: "mouseReleased", x: 720, y: 430, button: "left", clickCount: 1 });
+    await wait(6_000);
+    const injectedPosition = await evaluate(session, `(() => {
+      const video = document.querySelector('video');
+      if (!video || !Number.isFinite(video.duration) || video.duration < 120) return null;
+      const position = Math.min(90, Math.max(30, video.duration / 2));
+      video.currentTime = position;
+      video.dispatchEvent(new Event('seeked', { bubbles: true }));
+      return { position: video.currentTime, duration: video.duration, title: document.title };
+    })()`);
+    if (!injectedPosition?.position) {
+      continueWatchingTest = { skipped: "Rutube did not create a video element without an interactive playback start" };
+    } else {
+      await wait(1_000);
+      const storedResult = await extensionEvaluate(devToolsPort, globalThis.extensionID, `(async () => {
+        const value = (await chrome.storage.local.get('continueWatching')).continueWatching;
+        return { value: Object.values(value?.entries || {})[0] || null };
+      })()`);
+      const stored = storedResult?.value;
+      assert.ok(stored?.position >= 29, "Rutube position was not saved after seeked");
+      await session.command("Page.reload");
+      await wait(site.waitMS);
+      const restored = await evaluate(session, `(() => {
+        const video = document.querySelector('video');
+        const notice = document.querySelector('[data-browser-monitor-notice="continue-watching"]');
+        return {
+          position: video?.currentTime ?? null,
+          duration: video?.duration ?? null,
+          noticeTitle: notice?.dataset.browserMonitorMediaTitle || '',
+          noticeTime: notice?.dataset.browserMonitorMediaTime || ''
+        };
+      })()`);
+      continueWatchingTest = { injectedPosition, stored, restored };
+      assert.ok(restored.noticeTime, `Rutube resume notice was not restored: ${JSON.stringify(continueWatchingTest)}`);
+      assert.ok(restored.position >= 29, `Rutube position was not restored after reload: ${JSON.stringify(continueWatchingTest)}`);
+    }
+  }
   const timeline = [];
   for (let sample = 0; sample < 6; sample += 1) {
     const state = await evaluate(session, `(() => {
@@ -302,8 +401,11 @@ async function auditSite(devToolsPort, site, index) {
 
   const after = await evaluate(session, pageProbe);
   const childContextsAfter = await probeChildContexts(session);
-  if (site.key === "lordfilm") {
+  if (site.key === "lordfilm" || site.key === "lordserial-himym") {
     await evaluate(session, "document.querySelector('#myframe')?.scrollIntoView({block:'center'}); true").catch(() => false);
+    if (site.key === "lordserial-himym") {
+      await evaluate(session, "document.querySelector('iframe[src*=\"api.namy.ws\"]')?.scrollIntoView({block:'center'}); true").catch(() => false);
+    }
     await wait(500);
   }
   const screenshotPath = join(dirname(outputPath), `${site.key}-exact-audit.png`);
@@ -316,7 +418,7 @@ async function auditSite(devToolsPort, site, index) {
 
   return {
     key: site.key, name: site.name, requestedURL: site.url,
-    testedAt: new Date().toISOString(), before, childContextsBefore, timeline, sponsorSkipTest, after, childContextsAfter,
+    testedAt: new Date().toISOString(), before, childContextsBefore, timeline, sponsorSkipTest, continueWatchingTest, after, childContextsAfter,
     blockedRequests: session.blocked,
     mediaResponses: session.responses.filter((entry) => entry.type === "Media" || /video|audio|mpegurl|dash|mp4|webm/i.test(entry.mimeType || "")).slice(0, 100),
     relatedTargets, screenshotPath

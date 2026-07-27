@@ -51,6 +51,15 @@
         <p id="reality-note">The internet is behaving so far.</p>
       </aside>
     </section>
+
+    <section class="redirect-card">
+      <div class="section-title">
+        <div><h2 id="redirect-title">Redirect map</h2><p id="redirect-detail">Recent local navigation chains</p></div>
+        <button id="clear-redirects" type="button">Clear map</button>
+      </div>
+      <div id="redirect-list" class="redirect-list"></div>
+      <p id="redirect-empty" class="empty">Redirect chains will appear after a site sends a tab through another domain.</p>
+    </section>
   </main>
   <footer><p id="privacy-note">Only a focused, visible tab with recent interaction is counted. Domains and daily counters are kept for 90 days — without full URLs or page titles.</p><button id="clear-activity" type="button">Clear statistics</button></footer>
   <script type="module" src="activity-page.js"></script>
