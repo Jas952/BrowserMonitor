@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Browser Monitor",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "minimum_chrome_version": "120",
   "description": "Analyzes Chrome tabs and provides local ad, tracker, distraction, cookie-banner, and custom element controls.",
   "icons": {
@@ -21,6 +21,7 @@
     "webRequest"
   ],
   "optional_permissions": [
+    "browsingData",
     "clipboardWrite",
     "cookies",
     "downloads",
@@ -72,10 +73,35 @@
         "https://*/*"
       ],
       "js": [
+        "page-guard.js",
         "content.js"
       ],
       "run_at": "document_start",
       "all_frames": false
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "page-guard.js",
+        "video-resume-frame.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "crypto-guard-main.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false,
+      "world": "MAIN"
     }
   ],
   "web_accessible_resources": [

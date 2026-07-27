@@ -83,8 +83,17 @@
       <section id="privacy" class="settings-section settings-panel" role="tabpanel" hidden>
         <div class="section-intro"><div><h2 data-i18n="sectionPrivacyTools">Privacy</h2><p data-i18n="sectionPrivacyToolsDescription"></p></div></div>
         <div class="settings-cluster">
+          <div class="cluster-heading"><h3 data-i18n="automaticProtectionGroup">Automatic local protection</h3><p data-i18n="automaticProtectionGroupDescription"></p></div>
+          <div class="setting-grid">
+            <article class="setting-card featured"><div class="setting-icon">₿</div><div class="setting-copy"><h3 data-i18n="cryptoGuardTitle"></h3><p data-i18n="cryptoGuardDescription"></p></div><span class="always-on-badge" data-i18n="alwaysOn">Always on</span></article>
+            <article class="setting-card"><div class="setting-icon">▶</div><div class="setting-copy"><h3 data-i18n="continueWatchingTitle"></h3><p data-i18n="continueWatchingDescription"></p></div><span class="always-on-badge" data-i18n="localOnlyBadge">Local</span></article>
+          </div>
+        </div>
+
+        <div class="settings-cluster">
           <div class="cluster-heading"><h3 data-i18n="sectionLinkSafety">Link safety</h3><p data-i18n="sectionLinkSafetyDescription"></p></div>
           <div class="setting-grid">
+          <article class="setting-card featured"><div class="setting-icon">🔍</div><div class="setting-copy"><h3 data-i18n="searchProtection"></h3><p data-i18n="searchProtectionDescription"></p></div><label class="switch"><input data-setting="searchProtectionEnabled" type="checkbox"><span></span></label></article>
           <article class="setting-card featured"><div class="setting-icon">!</div><div class="setting-copy"><h3 data-i18n="linkSafetyEnabled"></h3><p data-i18n="linkSafetyEnabledDescription"></p></div><label class="switch"><input data-link-safety-setting="enabled" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">↪</div><div class="setting-copy"><h3 data-i18n="warnShorteners"></h3><p data-i18n="warnShortenersDescription"></p></div><label class="switch"><input data-link-safety-setting="warnShorteners" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">≋</div><div class="setting-copy"><h3 data-i18n="warnLookalikes"></h3><p data-i18n="warnLookalikesDescription"></p></div><label class="switch"><input data-link-safety-setting="warnLookalikes" type="checkbox"><span></span></label></article>

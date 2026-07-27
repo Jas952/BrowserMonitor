@@ -1,7 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
-const REPOSITORY_ISSUES_URL = "https://github.com/Jas952/BrowserMonitor/issues/new";
+const FEEDBACK_RECIPIENT_EMAIL = "darktmonth@gmail.com";
 const MAX_OUTBOX_BYTES = 6 * 1024 * 1024;
 let language = "en";
 let attachment = null;
@@ -19,20 +19,20 @@ const reportedTitle = String(query.get("title") ?? "").trim().slice(0, 300);
 const COPY = {
   en: {
     title:"Send feedback",subtitle:"Suggest a tool or report a problem",feature:"New tool",bug:"Problem",site:"Site filters",email:"Your email",
-    message:"Describe your request",attachment:"Screenshot",attachmentDetail:"PNG, JPEG or WebP up to 2 MB. It stays local until you attach it in GitHub.",
-    choose:"Choose image",remove:"Remove attachment",note:"Sending opens a pre-filled GitHub issue. Nothing is sent silently; you review and submit it there.",
+    message:"Describe your request",attachment:"Screenshot",attachmentDetail:"PNG, JPEG or WebP up to 2 MB. It stays local until you attach it to the email.",
+    choose:"Choose image",remove:"Remove attachment",note:"Sending opens a pre-filled email. Nothing is sent silently; you review and send it in your mail app.",
     send:"Continue to send",required:"Enter a valid email and describe the request.",imageError:"Choose a PNG, JPEG or WebP image up to 2 MB.",
-    prepared:"Request prepared and GitHub opened. Attach the selected screenshot there, then submit the issue.",featureTitle:"Tool request",bugTitle:"Bug report",siteTitle:"Site filter report",
-    emailNote:"This email is included in the GitHub issue and may be public.",
+    prepared:"Email prepared. Review it in your mail app, attach the selected screenshot if needed, then send.",featureTitle:"Tool request",bugTitle:"Bug report",siteTitle:"Site filter report",
+    emailNote:"This email is used only so the developer can reply to you.",
     siteTemplate:(url, title) => `Site: ${url}\nPage title: ${title || "Not available"}\n\nWhat is not working:\n`
   },
   ru: {
     title:"Отправить запрос",subtitle:"Предложить инструмент или сообщить об ошибке",feature:"Новый инструмент",bug:"Ошибка",site:"Фильтры сайта",email:"Ваша почта",
-    message:"Опишите запрос",attachment:"Скриншот",attachmentDetail:"PNG, JPEG или WebP до 2 МБ. Файл остаётся локально, пока вы не прикрепите его в GitHub.",
-    choose:"Выбрать изображение",remove:"Удалить вложение",note:"Отправка откроет заполненный запрос GitHub. Ничего не отправляется скрытно: вы проверяете и подтверждаете запрос там.",
+    message:"Опишите запрос",attachment:"Скриншот",attachmentDetail:"PNG, JPEG или WebP до 2 МБ. Файл остаётся локально, пока вы не прикрепите его к письму.",
+    choose:"Выбрать изображение",remove:"Удалить вложение",note:"Отправка откроет заполненное письмо. Ничего не отправляется скрытно: вы проверяете и отправляете письмо в почтовом приложении.",
     send:"Перейти к отправке",required:"Укажите корректную почту и опишите запрос.",imageError:"Выберите PNG, JPEG или WebP до 2 МБ.",
-    prepared:"Запрос подготовлен и открыт в GitHub. Прикрепите выбранный скриншот и подтвердите создание запроса.",featureTitle:"Запрос инструмента",bugTitle:"Сообщение об ошибке",siteTitle:"Проблема фильтров сайта",
-    emailNote:"Почта попадёт в GitHub Issue и может быть видна публично.",
+    prepared:"Письмо подготовлено. Проверьте его в почтовом приложении, при необходимости прикрепите скриншот и отправьте.",featureTitle:"Запрос инструмента",bugTitle:"Сообщение об ошибке",siteTitle:"Проблема фильтров сайта",
+    emailNote:"Почта используется только для ответа разработчика.",
     siteTemplate:(url, title) => `Сайт: ${url}\nНазвание страницы: ${title || "Недоступно"}\n\nЧто не работает:\n`
   }
 };
@@ -141,8 +141,8 @@ $("#send-feedback").addEventListener("click", async () => {
     `Temporarily paused: ${diagnostics.temporarilyPaused}`,
     ...Object.entries(diagnostics.filters).map(([key, enabled]) => `${key}: ${enabled}`)
   ] : [];
-  const body = [`Email: ${email}`, "", message, ...diagnosticsLines, "", attachment ? `Screenshot selected locally: ${attachment.name} (attach it to this issue)` : "Screenshot: none", "", `Browser Monitor ${chrome.runtime.getManifest().version}`].join("\n");
-  const url = `${REPOSITORY_ISSUES_URL}?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+  const body = [`Reply email: ${email}`, "", message, ...diagnosticsLines, "", attachment ? `Screenshot selected locally: ${attachment.name} (attach it to this email)` : "Screenshot: none", "", `Browser Monitor ${chrome.runtime.getManifest().version}`].join("\n");
+  const url = `mailto:${encodeURIComponent(FEEDBACK_RECIPIENT_EMAIL)}?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
   await chrome.tabs.create({ url });
   request.status = "opened";
   await chrome.storage.local.set({ feedbackOutbox: compactOutbox([request, ...feedbackOutbox]) });

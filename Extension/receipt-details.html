@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Browser Monitor — Site Privacy Details</title>
+    <link rel="stylesheet" href="statistics.css">
+    <style>
+      body { min-height: 100vh; display: flex; flex-direction: column; background: var(--surface); color: var(--text-primary); }
+      .window-header { position: sticky; top: 0; z-index: 10; padding: 20px 24px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+      .brand { display: flex; align-items: center; gap: 16px; }
+      .brand img { width: 48px; height: 48px; }
+      .brand h1 { margin: 0; font: 600 20px/28px var(--font-stack); letter-spacing: -0.01em; color: var(--text-primary); }
+      .brand p { margin: 2px 0 0; font: 400 13px/18px var(--font-stack); color: var(--text-secondary); max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      main { padding: 24px; flex-grow: 1; }
+      .list-grid { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items: start; }
+      .list-card { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: var(--shadow-sm); }
+      .section-title { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+      .section-title h2 { margin: 0; font: 600 15px/22px var(--font-stack); color: var(--text-primary); }
+      .section-title span { font: 500 13px/20px var(--font-stack); color: var(--text-tertiary); padding: 2px 8px; background: var(--surface-hover); border-radius: 999px; }
+      .ranked-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+      .ranked-list li { display: flex; justify-content: space-between; padding: 6px 8px; border-radius: 6px; font: 13px/18px var(--font-stack); }
+      .ranked-list li:hover { background: var(--surface-hover); }
+      .ranked-list span { color: var(--text-primary); font-variant-numeric: tabular-nums; word-break: break-all; margin-right: 12px; }
+      .ranked-list strong { color: var(--text-secondary); font-weight: 500; }
+      .empty { font: 400 13px/20px var(--font-stack); color: var(--text-tertiary); margin: 0; padding: 12px 8px; text-align: center; }
+      footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: center; background: var(--surface); }
+      footer p { margin: 0; font: 12px/16px var(--font-stack); color: var(--text-tertiary); text-align: center; max-width: 480px; }
+    </style>
+  </head>
+  <body>
+    <header class="window-header">
+      <div class="brand">
+        <img src="icons/browser-monitor-48.png" alt="">
+        <div><h1 data-i18n="receiptDetailsTitle">Site Privacy Details</h1><p id="details-domain">—</p></div>
+      </div>
+    </header>
+
+    <main>
+      <section class="list-grid">
+        <article class="list-card">
+          <div class="section-title"><div><h2 data-i18n="blockedResources">Blocked Trackers & Resources</h2></div><span id="blocked-count">0</span></div>
+          <ol id="blocked-resources" class="ranked-list"></ol>
+          <p id="blocked-empty" class="empty" data-i18n="noBlockedResources">No resources blocked.</p>
+        </article>
+        <article class="list-card">
+          <div class="section-title"><div><h2 data-i18n="thirdPartyConnections">Third-Party Connections</h2></div><span id="third-party-count">0</span></div>
+          <ol id="third-party-connections" class="ranked-list"></ol>
+          <p id="third-party-empty" class="empty" data-i18n="noThirdPartyConnections">No third-party connections.</p>
+        </article>
+      </section>
+    </main>
+
+    <footer>
+      <p data-i18n="receiptLocalOnly">This receipt is assembled locally and is not saved.</p>
+    </footer>
+    <script type="module" src="receipt-details.js"></script>
+  </body>
+</html>

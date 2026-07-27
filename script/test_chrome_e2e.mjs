@@ -11,6 +11,7 @@ import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
+const extensionDirectory = resolve(process.env.BROWSER_MONITOR_EXTENSION_PATH || join(root, "Extension"));
 const chromeBinary = process.env.BROWSER_MONITOR_CHROME_BINARY;
 assert.ok(
   existsSync(chromeBinary),
@@ -23,6 +24,9 @@ const port = 18765;
 const screenshotPath = process.env.BROWSER_MONITOR_SCREENSHOT_PATH;
 const animationScreenshotPath = process.env.BROWSER_MONITOR_ANIMATION_SCREENSHOT_PATH;
 const statisticsScreenshotPath = process.env.BROWSER_MONITOR_STATISTICS_SCREENSHOT_PATH;
+const optionsScreenshotPath = process.env.BROWSER_MONITOR_OPTIONS_SCREENSHOT_PATH;
+const activityScreenshotPath = process.env.BROWSER_MONITOR_ACTIVITY_SCREENSHOT_PATH;
+const searchScreenshotPath = process.env.BROWSER_MONITOR_SEARCH_SCREENSHOT_PATH;
 const headless = process.env.BROWSER_MONITOR_HEADLESS === "1";
 let server;
 let chrome;
@@ -135,6 +139,37 @@ async function evaluateTestPage(devToolsPort, expression) {
   return response.result.result.value;
 }
 
+async function evaluatePageByURL(devToolsPort, urlNeedle, expression) {
+  const target = await poll(`${urlNeedle} DevTools target`, async () => {
+    const targets = await (await fetch(`http://127.0.0.1:${devToolsPort}/json/list`)).json();
+    return targets.find((candidate) => candidate.type === "page" && candidate.url.includes(urlNeedle));
+  });
+  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolvePromise, rejectPromise) => {
+    socket.addEventListener("open", resolvePromise, { once: true });
+    socket.addEventListener("error", rejectPromise, { once: true });
+  });
+  const response = await new Promise((resolvePromise, rejectPromise) => {
+    const timeout = setTimeout(() => rejectPromise(new Error(`Timed out evaluating ${urlNeedle}`)), 10_000);
+    socket.addEventListener("message", (event) => {
+      const message = JSON.parse(event.data);
+      if (message.id !== 305) return;
+      clearTimeout(timeout);
+      resolvePromise(message);
+    });
+    socket.send(JSON.stringify({
+      id: 305,
+      method: "Runtime.evaluate",
+      params: { expression, awaitPromise: true, returnByValue: true }
+    }));
+  });
+  socket.close();
+  if (response.error || response.result?.exceptionDetails) {
+    throw new Error(response.error?.message ?? response.result.exceptionDetails.text);
+  }
+  return response.result.result.value;
+}
+
 async function evaluateExtension(devToolsPort, expression, { userGesture = false } = {}) {
   const targets = await (await fetch(`http://127.0.0.1:${devToolsPort}/json/list`)).json();
   const target = targets.find((candidate) =>
@@ -237,7 +272,43 @@ async function captureStatisticsPage(devToolsPort, path) {
   writeFileSync(path, Buffer.from(screenshot.data, "base64"));
 }
 
-async function captureExtensionPage(devToolsPort, path) {
+async function captureSizedExtensionPage(devToolsPort, path, pagePath, width, height, { extensionPage = true } = {}) {
+  const urlNeedle = extensionPage ? `${extensionId}/${pagePath}` : pagePath;
+  const targets = await (await fetch(`http://127.0.0.1:${devToolsPort}/json/list`)).json();
+  const target = targets.find((candidate) =>
+    candidate.type === "page" && candidate.url.includes(urlNeedle)
+  );
+  assert.ok(target, `${pagePath} target not found for screenshot`);
+  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolvePromise, rejectPromise) => {
+    socket.addEventListener("open", resolvePromise, { once: true });
+    socket.addEventListener("error", rejectPromise, { once: true });
+  });
+  let id = 210;
+  const command = (method, params = {}) => new Promise((resolvePromise, rejectPromise) => {
+    const currentID = ++id;
+    const timeout = setTimeout(() => rejectPromise(new Error(`Timed out running ${method}`)), 5_000);
+    const listener = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.id !== currentID) return;
+      socket.removeEventListener("message", listener);
+      clearTimeout(timeout);
+      if (message.error) rejectPromise(new Error(message.error.message));
+      else resolvePromise(message.result);
+    };
+    socket.addEventListener("message", listener);
+    socket.send(JSON.stringify({ id: currentID, method, params }));
+  });
+  await command("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+  await command("Page.bringToFront");
+  await wait(300);
+  const screenshot = await command("Page.captureScreenshot", { format: "png", fromSurface: true });
+  socket.close();
+  assert.ok(screenshot.data, `Chrome returned no ${pagePath} screenshot data`);
+  writeFileSync(path, Buffer.from(screenshot.data, "base64"));
+}
+
+async function captureExtensionPage(devToolsPort, path, clip = { x: 0, y: 0, width: 420, height: 600, scale: 1 }) {
   const targets = await (await fetch(`http://127.0.0.1:${devToolsPort}/json/list`)).json();
   const target = targets.find((candidate) =>
     candidate.type === "page" && candidate.url.includes(`${extensionId}/popup.html`)
@@ -273,8 +344,8 @@ async function captureExtensionPage(devToolsPort, path) {
       params: {
         format: "png",
         fromSurface: true,
-        captureBeyondViewport: false,
-        clip: { x: 0, y: 0, width: 420, height: 600, scale: 1 }
+        captureBeyondViewport: clip.height < 600,
+        clip
       }
     }));
   });
@@ -327,6 +398,7 @@ async function captureTestPage(devToolsPort, path) {
 try {
   server = spawn(process.env.BROWSER_MONITOR_PYTHON_BINARY ?? "python3", [
     "-m", "http.server", String(port),
+    "--bind", "127.0.0.1",
     "--directory", join(root, "TestFixtures")
   ], { stdio: ["ignore", "ignore", "pipe"] });
   server.stderr.on("data", (chunk) => {
@@ -339,12 +411,13 @@ try {
 
   chrome = spawn(chromeBinary, [
     `--user-data-dir=${profile}`,
-    `--load-extension=${join(root, "Extension")}`,
-    `--disable-extensions-except=${join(root, "Extension")}`,
+    `--load-extension=${extensionDirectory}`,
+    `--disable-extensions-except=${extensionDirectory}`,
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-breakpad",
     "--disable-crash-reporter",
+    "--host-resolver-rules=MAP www.google.co.zz 127.0.0.1",
     "--remote-debugging-port=0",
     "--enable-logging=stderr",
     ...(headless ? ["--headless=new"] : []),
@@ -377,6 +450,10 @@ try {
     return selected.length === 297 ? selected : null;
   });
   assert.ok(cryptominingRules.every((rule) => rule.action.type === "block"));
+  await evaluateExtension(
+    devToolsPort,
+    `chrome.storage.local.set({ linkSafetyAllowedDomains: ["127.0.0.1"] })`
+  );
   const targetResponse = await fetch(
     `http://127.0.0.1:${devToolsPort}/json/new?${encodeURIComponent(testURL)}`,
     { method: "PUT" }
@@ -443,19 +520,26 @@ try {
     return state.title && state.tabCount > 0 ? state : null;
   });
   const popupGeometry = await evaluateExtensionPage(devToolsPort, `(async () => {
+    const tabs = await chrome.tabs.query({});
+    const heavyTab = tabs.find((candidate) => (candidate.url || "").includes("heavy-page.html"));
+    if (heavyTab) {
+      await chrome.tabs.update(heavyTab.id, { active: true });
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
     const measure = () => {
       const rect = (selector) => {
         const value = document.querySelector(selector).getBoundingClientRect();
         return { x: value.x, y: value.y, width: value.width, height: value.height };
       };
       return {
-        monitoring: rect("#monitoring-toggle"),
+        monitoring: rect("#extension-toggle"),
         blocker: rect("#blocker-toggle"),
         siteAction: rect("#site-control-action"),
         pip: rect("#pip-button"),
         cookies: rect("#cookies-button"),
         block: rect("#block-element-button"),
         statistics: rect("#statistics-button"),
+        watchHistory: rect("#watch-history-button"),
         tools: rect(".utility-section"),
         footer: rect("footer"),
         body: {
@@ -478,12 +562,86 @@ try {
   })()`);
   assert.deepEqual(popupGeometry.off.blocker, popupGeometry.before.blocker, "Protection switch moved when its label changed");
   assert.deepEqual(popupGeometry.restored.blocker, popupGeometry.before.blocker, "Protection switch did not return to stable geometry");
-  assert.equal(popupGeometry.before.monitoring.x, popupGeometry.before.blocker.x, "Header and protection switches are not vertically aligned");
+  assert.ok(
+    Math.abs(popupGeometry.before.monitoring.x - popupGeometry.before.blocker.x) <= 48,
+    "Header and protection switches left the shared right-side control area"
+  );
   assert.equal(popupGeometry.before.monitoring.width, popupGeometry.before.blocker.width, "Switch widths differ");
   assert.equal(popupGeometry.before.siteAction.width, 78, "Site action does not reserve stable label width");
-  assert.equal(popupGeometry.before.pip.width, popupGeometry.before.cookies.width, "Tool buttons are not equal-width");
-  assert.equal(popupGeometry.before.pip.width, popupGeometry.before.block.width, "Tool buttons are not aligned");
-  assert.equal(popupGeometry.before.pip.width, popupGeometry.before.statistics.width, "Statistics tool is not aligned");
+  const firstToolPageWidths = [
+    popupGeometry.before.pip.width,
+    popupGeometry.before.cookies.width,
+    popupGeometry.before.block.width,
+    popupGeometry.before.statistics.width
+  ];
+  assert.ok(firstToolPageWidths.every((width) => width >= 90), "Tool buttons became too narrow");
+  assert.ok(
+    firstToolPageWidths.every((width) => Math.abs(width - firstToolPageWidths[0]) < 1),
+    "First tool page does not use four equal slots"
+  );
+  const toolScroll = await evaluateExtensionPage(devToolsPort, `(async () => {
+    const popupTab = await chrome.tabs.getCurrent();
+    if (popupTab?.id) {
+      await chrome.tabs.update(popupTab.id, { active: true });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    const strip = document.querySelector("#tool-strip");
+    strip.scrollLeft = 0;
+    const before = strip.scrollLeft;
+    strip.dispatchEvent(new WheelEvent("wheel", { deltaY: 120, bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    const afterWheel = strip.scrollLeft;
+    document.querySelector("#previous-tools").click();
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    return {
+      before,
+      afterWheel,
+      afterArrow: strip.scrollLeft,
+      clientWidth: strip.clientWidth,
+      scrollWidth: strip.scrollWidth,
+      previousDisabled: document.querySelector("#previous-tools").disabled,
+      navCount: document.querySelectorAll(".tool-nav").length,
+      rulerExists: Boolean(document.querySelector("#tool-scroll-track"))
+    };
+  })()`);
+  assert.ok(
+    toolScroll.scrollWidth > toolScroll.clientWidth,
+    `Tool strip does not overflow horizontally: ${JSON.stringify(toolScroll)}`
+  );
+  assert.ok(
+    toolScroll.afterWheel > toolScroll.before,
+    `Mouse wheel did not scroll the tool strip: ${JSON.stringify(toolScroll)}`
+  );
+  assert.ok(toolScroll.afterArrow < toolScroll.afterWheel, "Previous arrow did not move to the previous tool page");
+  assert.equal(toolScroll.navCount, 2, "Tool carousel navigation is incomplete");
+  assert.equal(toolScroll.rulerExists, false, "Deprecated tool ruler is still rendered");
+  const duplicateOverflow = await evaluateExtensionPage(devToolsPort, `(() => {
+    const panel = document.querySelector("#duplicates-panel");
+    const list = document.querySelector("#duplicates-list");
+    const button = document.querySelector("#close-all-duplicates");
+    panel.hidden = false;
+    list.replaceChildren(...Array.from({ length: 24 }, (_, index) => {
+      const item = document.createElement("article");
+      item.className = "duplicate-group";
+      item.textContent = "Duplicate group " + (index + 1);
+      return item;
+    }));
+    const before = button.getBoundingClientRect();
+    list.scrollTop = list.scrollHeight;
+    const after = button.getBoundingClientRect();
+    const result = {
+      overflow: getComputedStyle(list).overflowY,
+      scrollable: list.scrollHeight > list.clientHeight,
+      buttonStayedFixed: Math.abs(before.y - after.y) < 1,
+      buttonInsidePanel: after.bottom <= panel.getBoundingClientRect().bottom
+    };
+    panel.hidden = true;
+    return result;
+  })()`);
+  assert.equal(duplicateOverflow.overflow, "auto", "Duplicate groups are not vertically scrollable");
+  assert.equal(duplicateOverflow.scrollable, true, "Large duplicate list did not overflow");
+  assert.equal(duplicateOverflow.buttonStayedFixed, true, "Duplicate cleanup button moved with the list");
+  assert.equal(duplicateOverflow.buttonInsidePanel, true, "Duplicate cleanup button left its panel");
   assert.ok(popupGeometry.before.ecoWidths.every((width) => width === 52), "Eco controls do not have stable widths");
   assert.deepEqual(popupGeometry.before.body, { width: 420, height: 600, scrollHeight: 600 });
   assert.equal(popupGeometry.before.tabListOverflow, "hidden", "Tab list still has an internal scrollbar");
@@ -557,6 +715,53 @@ try {
       : null;
   });
   assert.ok(blockingStatistics.today.total >= blockingStatistics.today.types.network);
+  const privacyReceipt = await poll("site privacy receipt", async () => {
+    const receipt = await evaluateExtensionPage(
+      devToolsPort,
+      `chrome.runtime.sendMessage({
+        kind: "getSitePrivacyReceipt",
+        tabId: ${initial.tab.tabId},
+        url: ${JSON.stringify(testURL)}
+      })`
+    );
+    return receipt?.blockedRequests > 0 && receipt?.thirdPartyDomains?.some((entry) => entry.domain === "adnxs.com")
+      ? receipt
+      : null;
+  });
+  assert.equal(privacyReceipt.localOnly, true);
+  assert.equal(privacyReceipt.protectionActive, true);
+  const cryptoGuardMemory = await evaluateExtensionPage(devToolsPort, `(async () => {
+    const original = "a".repeat(64);
+    const other = "b".repeat(64);
+    await chrome.runtime.sendMessage({ kind: "rememberCryptoGuardCopy", fingerprint: original, family: "EVM" });
+    const same = await chrome.runtime.sendMessage({ kind: "verifyCryptoGuardPaste", fingerprint: original, family: "EVM" });
+    const mismatch = await chrome.runtime.sendMessage({ kind: "verifyCryptoGuardPaste", fingerprint: other, family: "EVM" });
+    return { same, mismatch };
+  })()`);
+  assert.deepEqual(cryptoGuardMemory.same, { known: true, matches: true });
+  assert.deepEqual(cryptoGuardMemory.mismatch, { known: true, matches: false });
+  const continueWatchingState = await evaluateExtensionPage(devToolsPort, `(async () => {
+    const identity = "c".repeat(64);
+    await chrome.runtime.sendMessage({
+      kind: "setContinueWatchingPosition",
+      identity,
+      position: 91.5,
+      duration: 1800,
+      completed: false
+    });
+    const saved = await chrome.runtime.sendMessage({ kind: "getContinueWatchingPosition", identity });
+    await chrome.runtime.sendMessage({
+      kind: "setContinueWatchingPosition",
+      identity,
+      position: 1790,
+      duration: 1800,
+      completed: true
+    });
+    const cleared = await chrome.runtime.sendMessage({ kind: "getContinueWatchingPosition", identity });
+    return { saved, cleared };
+  })()`);
+  assert.equal(continueWatchingState.saved.position, 91.5);
+  assert.deepEqual(continueWatchingState.cleared, {});
   await poll("recognized video-ad fixture", async () => {
     const state = await inspectExtensionState(devToolsPort);
     const today = Object.values(state.blockingStatistics?.days ?? {}).at(-1);
@@ -622,7 +827,7 @@ try {
       devToolsPort,
       `chrome.runtime.sendMessage({ kind: "getBrowserProtectionSettings" })`
     );
-    return settings.customCosmeticFilters?.includes("h1") ? settings : null;
+    return settings.customCosmeticFilters?.includes("127.0.0.1##h1") ? settings : null;
   });
   await poll("manually hidden page element", async () => (
     (await inspectTestPage(devToolsPort)).headingDisplay === "none"
@@ -880,14 +1085,69 @@ try {
       })`);
       return state.cookiesEnabled && state.tabCount > 0 ? state : null;
     }, 5_000);
-    await captureExtensionPage(devToolsPort, screenshotPath);
+    await captureSizedExtensionPage(devToolsPort, screenshotPath, "popup.html", 420, 600);
+    await evaluateExtensionPage(devToolsPort, `(() => {
+      const next = document.querySelector("#next-tools");
+      next.style.opacity = "1";
+      next.style.pointerEvents = "auto";
+      next.style.transform = "translateY(-50%) scale(1)";
+      return true;
+    })()`);
+    const toolsRect = await evaluateExtensionPage(devToolsPort, `(() => {
+      const rect = document.querySelector(".utility-section").getBoundingClientRect();
+      return { x: 0, y: Math.max(0, rect.y - 8), width: 420, height: rect.height + 16, scale: 1 };
+    })()`);
+    await captureExtensionPage(
+      devToolsPort,
+      screenshotPath.replace(/\.png$/i, "-tools-scroll.png"),
+      toolsRect
+    );
+    await evaluateExtensionPage(devToolsPort, `(() => {
+      const button = document.querySelector("#cookies-button");
+      document.querySelector("#tool-strip").classList.add("reordering");
+      button.classList.add("dragging");
+      button.style.setProperty("--tool-drag-x", "18px");
+      return true;
+    })()`);
+    await captureExtensionPage(
+      devToolsPort,
+      screenshotPath.replace(/\.png$/i, "-tools-drag.png"),
+      toolsRect
+    );
+    await evaluateExtensionPage(devToolsPort, `(() => {
+      const button = document.querySelector("#cookies-button");
+      document.querySelector("#tool-strip").classList.remove("reordering");
+      button.classList.remove("dragging");
+      button.style.removeProperty("--tool-drag-x");
+      return true;
+    })()`);
+    await evaluateExtensionPage(devToolsPort, `document.querySelector("#privacy-receipt-button").click(); true`);
+    await poll("privacy receipt render", async () => {
+      const state = await evaluateExtensionPage(devToolsPort, `({
+        hidden: document.querySelector("#privacy-receipt").hidden,
+        domain: document.querySelector("#privacy-receipt-domain").textContent,
+        state: document.querySelector("#privacy-receipt-state").textContent
+      })`);
+      return !state.hidden && state.domain && state.state ? state : null;
+    }, 5_000);
+    await captureExtensionPage(devToolsPort, screenshotPath.replace(/\.png$/i, "-privacy-receipt.png"));
+    await evaluateExtensionPage(devToolsPort, `document.querySelector("#pause-site-button").click(); true`);
+    await poll("temporary pause notice in popup", async () => {
+      const state = await evaluateExtensionPage(devToolsPort, `({
+        notice: document.querySelector("#site-action-status").textContent,
+        paused: document.querySelector("#pause-site-button").getAttribute("aria-pressed")
+      })`);
+      return state.notice && state.paused === "true" ? state : null;
+    }, 5_000);
+    await captureExtensionPage(devToolsPort, screenshotPath.replace(/\.png$/i, "-paused.png"));
+    await evaluateExtensionPage(devToolsPort, `document.querySelector("#pause-site-button").click(); true`);
     await evaluateExtensionPage(devToolsPort, `document.querySelector(".tab-copy").click(); true`);
     await captureExtensionPage(devToolsPort, screenshotPath.replace(/\.png$/i, "-details.png"));
     await evaluateExtensionPage(devToolsPort, `(() => {
       document.querySelector("#close-tab-detail").click();
       document.querySelector("#cookies-button").click();
       return true;
-    })()`);
+    })()`, { userGesture: true });
     await poll("cookie table render", async () => {
       const state = await evaluateExtensionPage(devToolsPort, `({
         hidden: document.querySelector("#cookies-panel").hidden,
@@ -896,6 +1156,152 @@ try {
       return !state.hidden && state.rows > 0 ? state : null;
     }, 5_000);
     await captureExtensionPage(devToolsPort, screenshotPath.replace(/\.png$/i, "-cookies.png"));
+    await evaluateExtension(devToolsPort, `chrome.storage.local.set({
+      continueWatching: {
+        version: 2,
+        entries: {
+          "${"1".repeat(64)}": {
+            position: 1542,
+            duration: 2880,
+            updatedAt: ${Date.now()},
+            site: "lordserial.example",
+            title: "Как я встретил вашу маму",
+            episode: "S2 · E7",
+            mediaType: "episode",
+            url: "https://lordserial.example/series/how-i-met-your-mother?season=2&episode=7"
+          },
+          "${"2".repeat(64)}": {
+            position: 4380,
+            duration: 7200,
+            updatedAt: ${Date.now() - 1_000},
+            site: "kinopoisk.example",
+            title: "Интерстеллар",
+            episode: "",
+            mediaType: "movie",
+            url: "https://kinopoisk.example/film/interstellar"
+          },
+          "${"3".repeat(64)}": {
+            position: 1120,
+            duration: 3670,
+            updatedAt: ${Date.now() - 2_000},
+            site: "youtube.com",
+            title: "Большой разбор устройства браузеров",
+            episode: "",
+            mediaType: "video",
+            url: "https://youtube.com/watch?v=browser-monitor-demo"
+          }
+        }
+      }
+    })`);
+    await evaluateExtensionPage(devToolsPort, "location.reload(); true");
+    await poll("recent video history control", async () => {
+      return evaluateExtensionPage(
+        devToolsPort,
+        `Boolean(document.querySelector("#watch-history-button") && !document.body.classList.contains("preload"))`
+      );
+    }, 5_000);
+    await evaluateExtensionPage(devToolsPort, `document.querySelector("#watch-history-button").click(); true`);
+    await poll("recent video history render", async () => {
+      const state = await evaluateExtensionPage(devToolsPort, `({
+          hidden: document.querySelector("#watch-history-view")?.hidden,
+          entries: document.querySelectorAll(".watch-history-item").length
+        })`);
+      return !state.hidden && state.entries === 3 ? state : null;
+    }, 5_000);
+    await captureExtensionPage(devToolsPort, screenshotPath.replace(/\.png$/i, "-watch-history.png"));
+  }
+
+  if (optionsScreenshotPath) {
+    const optionsPageResponse = await fetch(
+      `http://127.0.0.1:${devToolsPort}/json/new?${encodeURIComponent(`chrome-extension://${extensionId}/options.html`)}`,
+      { method: "PUT" }
+    );
+    assert.ok(optionsPageResponse.ok, "Chrome could not open the options page");
+    await poll("options privacy section", async () => {
+      const state = await evaluateExtensionPage(devToolsPort, `(() => {
+        const button = document.querySelector('[data-section-target="privacy"]');
+        button?.click();
+        return {
+          crypto: document.querySelector('[data-i18n="cryptoGuardTitle"]')?.textContent,
+          hidden: document.querySelector("#privacy")?.hidden
+        };
+      })()`, { pagePath: "options.html" });
+      return state.crypto && state.hidden === false ? state : null;
+    }, 5_000);
+    await captureSizedExtensionPage(devToolsPort, optionsScreenshotPath, "options.html", 1280, 800);
+  }
+
+  if (activityScreenshotPath) {
+    await fetch(`http://127.0.0.1:${devToolsPort}/json/activate/${heavyTarget.id}`);
+    await evaluateTestPage(devToolsPort, `(() => {
+      document.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }));
+      return true;
+    })()`);
+    await poll("foreground attention sample", async () => {
+      const state = await inspectExtensionState(devToolsPort);
+      const sites = Object.values(state.siteActivityStatistics?.days ?? {})
+        .flatMap((day) => Object.values(day.sites ?? {}));
+      return sites.some((site) => site.activeSeconds > 0) ? sites : null;
+    }, 20_000);
+    const activityPageResponse = await fetch(
+      `http://127.0.0.1:${devToolsPort}/json/new?${encodeURIComponent(`chrome-extension://${extensionId}/activity.html`)}`,
+      { method: "PUT" }
+    );
+    assert.ok(activityPageResponse.ok, "Chrome could not open the activity page");
+    await poll("attention report render", async () => {
+      const state = await evaluateExtensionPage(devToolsPort, `({
+        active: document.querySelector("#active-time")?.textContent,
+        visits: document.querySelector("#active-detail")?.textContent,
+        sites: document.querySelectorAll("#site-rows tr").length
+      })`, { pagePath: "activity.html" });
+      return state.active && state.sites > 0 ? state : null;
+    }, 5_000);
+    await captureSizedExtensionPage(devToolsPort, activityScreenshotPath, "activity.html", 1120, 760);
+  }
+
+  if (searchScreenshotPath) {
+    const searchURL = `http://www.google.co.zz:${port}/search/?q=browser+security+official+site`;
+    const searchPageResponse = await fetch(
+      `http://127.0.0.1:${devToolsPort}/json/new?${encodeURIComponent(searchURL)}`,
+      { method: "PUT" }
+    );
+    assert.ok(searchPageResponse.ok, "Chrome could not open the local search-results fixture");
+    await poll("search-result protection badges", async () => {
+      const result = await evaluatePageByURL(devToolsPort, "www.google.co.zz", `(() => ({
+        count: document.querySelectorAll("[data-browser-monitor-search-badge]").length,
+        labels: [...document.querySelectorAll("[data-browser-monitor-search-badge]")]
+          .slice(0, 8)
+          .map((host) => host.shadowRoot?.querySelector(".status")?.textContent)
+          .filter(Boolean)
+      }))()`);
+      return result.count >= 2 ? result : null;
+    }, 10_000);
+    const trustClick = await evaluatePageByURL(devToolsPort, "www.google.co.zz", `(() => {
+      const badge = document.querySelector('[data-browser-monitor-search-badge="example.com"]');
+      const button = badge?.shadowRoot?.querySelector(".trust");
+      button?.click();
+      return Boolean(button);
+    })()`);
+    assert.equal(trustClick, true, "Search-result allowlist action is unavailable");
+    const searchBadges = await poll("trusted search-result marker", async () => {
+      const result = await evaluatePageByURL(devToolsPort, "www.google.co.zz", `(() => ({
+        labels: [...document.querySelectorAll("[data-browser-monitor-search-badge]")]
+          .map((host) => host.shadowRoot?.querySelector(".status")?.textContent)
+          .filter(Boolean)
+      }))()`);
+      return result.labels.includes("Trusted") ? result : null;
+    }, 5_000);
+    assert.ok(searchBadges.labels.includes("Trusted"), "Allowed search result is not marked as trusted");
+    assert.ok(searchBadges.labels.includes("Suspicious"), "Risky search result is not marked as suspicious");
+    await captureSizedExtensionPage(
+      devToolsPort,
+      searchScreenshotPath,
+      "www.google.co.zz",
+      1280,
+      800,
+      { extensionPage: false }
+    );
   }
 
   console.log(JSON.stringify({
@@ -913,6 +1319,7 @@ try {
     customFilterSubscriptionInstalledAndRemoved: true,
     activationAnimationMounted: true,
     popupLayoutStable: true,
+    watchHistoryRendered: true,
     pictureInPictureOpenedAndClosed: headless ? "skipped-headless" : true,
     tabRemainedOpen: true,
     animationsPausedAndRestored: true,

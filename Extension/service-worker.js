@@ -27,6 +27,12 @@ import {
   normalizeSiteDomain,
   temporaryPauseRules
 } from "./blocker.js";
+import {
+  appendRedirectStep,
+  normalizeRedirectHistory,
+  registrableSite,
+  sanitizeCleanupSites
+} from "./site-tools.js";
 
 const ALARM_NAME = "collect-browser-snapshot";
 const CUSTOM_FILTER_FIRST_RULE_ID = 630_000;
@@ -35,9 +41,15 @@ const CUSTOM_FILTER_COSMETIC_LIMIT = 500;
 const CUSTOM_FILTER_MAX_BYTES = 1_048_576;
 const BLOCKING_STATISTICS_KEY = "blockingStatistics";
 const ACTIVITY_STATISTICS_KEY = "siteActivityStatistics";
+const SITE_DATA_CLEANUP_KEY = "siteDataCleanupSites";
+const REDIRECT_HISTORY_KEY = "redirectHistory";
+const CONTINUE_WATCHING_KEY = "continueWatching";
 const SPONSOR_CACHE_KEY = "sponsorSegmentCache";
 const SPONSOR_CACHE_LIMIT = 80;
 const SPONSOR_CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
+const CONTINUE_WATCHING_LIMIT = 100;
+const CONTINUE_WATCHING_TTL_MS = 90 * 24 * 60 * 60 * 1_000;
+const CRYPTO_GUARD_COPY_TTL_MS = 5 * 60 * 1_000;
 const DEFAULT_PROTECTION_SETTINGS = {
   cookieBannerBlockingEnabled: false,
   newsletterBlockingEnabled: false,
@@ -56,6 +68,7 @@ const DEFAULT_PROTECTION_SETTINGS = {
   regionalRussianFilteringEnabled: true,
   imageSwapEnabled: false,
   imageSwapTheme: "landscape",
+  searchProtectionEnabled: true,
   customFilterListURLs: [],
   customFilterListRefreshRequestedAt: null,
   allowlistedSites: [],
@@ -76,7 +89,8 @@ const PROTECTION_BOOLEAN_KEYS = [
   "videoAdProtectionEnabled", "sponsorSegmentSkippingEnabled",
   "adFilterEnabled", "privacyFilterEnabled", "cosmeticFilteringEnabled",
   "cryptominingProtectionEnabled", "socialWidgetBlockingEnabled",
-  "antiAdblockMessageBlockingEnabled", "regionalRussianFilteringEnabled", "imageSwapEnabled"
+  "antiAdblockMessageBlockingEnabled", "regionalRussianFilteringEnabled", "imageSwapEnabled",
+  "searchProtectionEnabled"
 ];
 
 let contentBlockingEnabledCached = true;
@@ -84,6 +98,12 @@ let pendingBlockingEvents = [];
 let blockingStatisticsTimer = null;
 let blockingStatisticsWrite = Promise.resolve();
 let activityStatisticsWrite = Promise.resolve();
+let continueWatchingWrite = Promise.resolve();
+let cryptoGuardCopy = null;
+const privacySessions = new Map();
+const lastTabOrigins = new Map();
+const redirectRequests = new Map();
+let redirectHistoryWrite = Promise.resolve();
 const BLOCKING_STATISTICS_FLUSH_DELAY_MS = 2_000;
 const BLOCKING_STATISTICS_BATCH_SIZE = 500;
 
@@ -379,6 +399,191 @@ function hostnameFromURL(value) {
   }
 }
 
+function registrableDomainFromURL(value) {
+  return parseURLParts(value)?.registrableDomain ?? hostnameFromURL(value);
+}
+
+function privacySession(tabId, site, { reset = false } = {}) {
+  if (!Number.isInteger(tabId) || tabId < 0 || !site) return null;
+  const current = privacySessions.get(tabId);
+  if (!reset && current?.site === site) return current;
+  const next = {
+    site,
+    startedAt: Date.now(),
+    thirdPartyRequests: 0,
+    blockedRequests: 0,
+    thirdPartyDomains: new Map(),
+    blockedDomains: new Map()
+  };
+  privacySessions.set(tabId, next);
+  return next;
+}
+
+function recordPrivacyRequest(details) {
+  if (!Number.isInteger(details.tabId) || details.tabId < 0 || !/^https?:/i.test(details.url ?? "")) return;
+  const resourceDomain = registrableDomainFromURL(details.url);
+  if (!resourceDomain) return;
+  if (details.type === "main_frame") {
+    privacySession(details.tabId, resourceDomain, { reset: true });
+    return;
+  }
+  const sourceURL = details.initiator || details.documentUrl || "";
+  const site = registrableDomainFromURL(sourceURL) || privacySessions.get(details.tabId)?.site;
+  const session = privacySession(details.tabId, site);
+  if (!session || resourceDomain === session.site) return;
+  session.thirdPartyRequests += 1;
+  session.thirdPartyDomains.set(
+    resourceDomain,
+    (session.thirdPartyDomains.get(resourceDomain) ?? 0) + 1
+  );
+  if (session.thirdPartyDomains.size > 80) {
+    const leastUsed = [...session.thirdPartyDomains.entries()]
+      .sort((left, right) => left[1] - right[1])
+      .slice(0, session.thirdPartyDomains.size - 80);
+    for (const [domain] of leastUsed) session.thirdPartyDomains.delete(domain);
+  }
+}
+
+function recordPrivacyBlock(tabId, pageURL, resourceDomain) {
+  if (!Number.isInteger(tabId) || tabId < 0) return;
+  const site = registrableDomainFromURL(pageURL) || privacySessions.get(tabId)?.site;
+  const session = privacySession(tabId, site);
+  if (session) {
+    session.blockedRequests += 1;
+    if (resourceDomain) {
+      session.blockedDomains.set(
+        resourceDomain,
+        (session.blockedDomains.get(resourceDomain) ?? 0) + 1
+      );
+      if (session.blockedDomains.size > 150) {
+        const leastUsed = [...session.blockedDomains.entries()]
+          .sort((left, right) => left[1] - right[1])
+          .slice(0, session.blockedDomains.size - 150);
+        for (const [domain] of leastUsed) session.blockedDomains.delete(domain);
+      }
+    }
+  }
+}
+
+function normalizedContinueWatching(input) {
+  const now = Date.now();
+  const entries = Object.entries(input?.entries ?? {}).flatMap(([identity, entry]) => {
+    const updatedAt = Number(entry?.updatedAt);
+    const position = Number(entry?.position);
+    const duration = Number(entry?.duration);
+    if (!/^[a-f0-9]{64}$/.test(identity) || !Number.isFinite(updatedAt)
+        || now - updatedAt > CONTINUE_WATCHING_TTL_MS
+        || !Number.isFinite(position) || position <= 0
+        || !Number.isFinite(duration) || duration < 120) return [];
+    const title = String(entry?.title ?? "").replace(/\s+/g, " ").trim().slice(0, 160);
+    const episode = String(entry?.episode ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+    const site = String(entry?.site ?? "").toLowerCase().replace(/^www\./, "").slice(0, 253);
+    const mediaType = ["episode", "movie", "video"].includes(entry?.mediaType)
+      ? entry.mediaType
+      : "video";
+    let url = "";
+    try {
+      const parsed = new URL(String(entry?.url ?? ""));
+      if (["http:", "https:"].includes(parsed.protocol)) {
+        parsed.username = "";
+        parsed.password = "";
+        parsed.hash = "";
+        for (const key of [...parsed.searchParams.keys()]) {
+          if (/^(?:utm_.+|token|session|auth|authorization|signature|sig|key|expires)$/i.test(key)) {
+            parsed.searchParams.delete(key);
+          }
+        }
+        url = parsed.href.slice(0, 2_048);
+      }
+    } catch {}
+    return [[identity, { position, duration, updatedAt, title, episode, site, mediaType, url }]];
+  }).sort((left, right) => right[1].updatedAt - left[1].updatedAt).slice(0, CONTINUE_WATCHING_LIMIT);
+  return { version: 2, entries: Object.fromEntries(entries) };
+}
+
+async function getContinueWatchingPosition(identity) {
+  if (!/^[a-f0-9]{64}$/.test(String(identity ?? ""))) return {};
+  await continueWatchingWrite;
+  const stored = await chrome.storage.local.get({ [CONTINUE_WATCHING_KEY]: { version: 2, entries: {} } });
+  return normalizedContinueWatching(stored[CONTINUE_WATCHING_KEY]).entries[identity] ?? {};
+}
+
+async function getContinueWatchingList() {
+  await continueWatchingWrite;
+  const stored = await chrome.storage.local.get({ [CONTINUE_WATCHING_KEY]: { version: 2, entries: {} } });
+  return Object.entries(normalizedContinueWatching(stored[CONTINUE_WATCHING_KEY]).entries)
+    .map(([identity, entry]) => ({ identity, ...entry }))
+    .filter((entry) => entry.url && entry.site);
+}
+
+function setContinueWatchingPosition({
+  identity, position, duration, completed, title, episode, mediaType, pageURL
+}) {
+  if (!/^[a-f0-9]{64}$/.test(String(identity ?? ""))) return Promise.resolve({ ok: false });
+  continueWatchingWrite = continueWatchingWrite.then(async () => {
+    const stored = await chrome.storage.local.get({ [CONTINUE_WATCHING_KEY]: { version: 2, entries: {} } });
+    const normalized = normalizedContinueWatching(stored[CONTINUE_WATCHING_KEY]);
+    if (completed || !Number.isFinite(position) || position < 10 || position >= duration - 20) {
+      delete normalized.entries[identity];
+    } else if (Number.isFinite(duration) && duration >= 120) {
+      let site = "";
+      try { site = new URL(pageURL).hostname.replace(/^www\./, ""); } catch {}
+      normalized.entries[identity] = {
+        position: Math.round(position * 10) / 10,
+        duration: Math.round(duration * 10) / 10,
+        updatedAt: Date.now(),
+        title,
+        episode,
+        mediaType,
+        site,
+        url: pageURL
+      };
+    }
+    await chrome.storage.local.set({ [CONTINUE_WATCHING_KEY]: normalizedContinueWatching(normalized) });
+  }).catch(() => {});
+  return continueWatchingWrite.then(() => ({ ok: true }));
+}
+
+async function sitePrivacyReceipt(tabId, url) {
+  const site = registrableDomainFromURL(url);
+  const session = privacySessions.get(tabId);
+  const relevantSession = session?.site === site ? session : null;
+  const [signals, protection] = await Promise.all([
+    Number.isInteger(tabId)
+      ? chrome.tabs.sendMessage(tabId, { kind: "getPagePrivacySignals" }).catch(() => ({}))
+      : Promise.resolve({}),
+    contentBlockingState(url).catch(() => ({})),
+    flushBlockingEvents()
+  ]);
+  const stored = await chrome.storage.local.get({ [BLOCKING_STATISTICS_KEY]: { version: 1, days: {} } });
+  const summary = summarizeBlockingStatistics(stored[BLOCKING_STATISTICS_KEY]);
+  const blockedToday = Object.entries(summary.today?.sites ?? {}).reduce((total, [domain, count]) => {
+    return domain === site || domain.endsWith(`.${site}`) ? total + count : total;
+  }, 0);
+  return {
+    domain: site,
+    startedAt: relevantSession?.startedAt ?? Date.now(),
+    thirdPartyRequests: relevantSession?.thirdPartyRequests ?? 0,
+    blockedRequests: relevantSession?.blockedRequests ?? 0,
+    blockedToday,
+    thirdPartyDomains: [...(relevantSession?.thirdPartyDomains ?? new Map()).entries()]
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .slice(0, 100)
+      .map(([domain, count]) => ({ domain, count })),
+    blockedDomains: [...(relevantSession?.blockedDomains ?? new Map()).entries()]
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .slice(0, 100)
+      .map(([domain, count]) => ({ domain, count })),
+    firstPartyCookies: Number(signals?.firstPartyCookies) || 0,
+    localStorageKeys: Number(signals?.localStorageKeys) || 0,
+    sessionStorageKeys: Number(signals?.sessionStorageKeys) || 0,
+    notificationPermission: String(signals?.notificationPermission ?? "unknown"),
+    secureContext: signals?.secureContext === true,
+    protectionActive: protection?.enabled !== false && !protection?.siteAllowlisted && !protection?.sitePausedUntil,
+    localOnly: true
+  };
+}
+
 function enqueueBlockingEvent(event) {
   pendingBlockingEvents.push(event);
   if (pendingBlockingEvents.length >= BLOCKING_STATISTICS_BATCH_SIZE) {
@@ -420,6 +625,7 @@ async function recordObservedNetworkBlock(details) {
     }
   }
   if (!site) return;
+  recordPrivacyBlock(details.tabId, details.initiator || details.documentUrl || "", resource);
   enqueueBlockingEvent({ type: "network", site, resource });
 }
 
@@ -1326,6 +1532,33 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
+  privacySessions.delete(tabId);
+  const closedOrigin = lastTabOrigins.get(tabId);
+  lastTabOrigins.delete(tabId);
+  redirectRequests.delete(tabId);
+  if (closedOrigin) {
+    const site = registrableSite(closedOrigin);
+    const stored = await chrome.storage.local.get({ [SITE_DATA_CLEANUP_KEY]: [] });
+    const cleanupSites = sanitizeCleanupSites(stored[SITE_DATA_CLEANUP_KEY]);
+    if (site && cleanupSites.includes(site) && await chrome.permissions.contains({ permissions: ["browsingData"] })) {
+      const remainingTabs = await chrome.tabs.query({});
+      const siteStillOpen = remainingTabs.some((tab) => registrableSite(tab.url) === site);
+      if (!siteStillOpen) {
+        await chrome.browsingData.remove(
+          { origins: [closedOrigin] },
+          {
+            cacheStorage: true,
+            cookies: true,
+            fileSystems: true,
+            indexedDB: true,
+            localStorage: true,
+            serviceWorkers: true,
+            webSQL: true
+          }
+        ).catch(() => {});
+      }
+    }
+  }
   const state = await ecoStorage();
   const key = String(tabId);
   const ruleId = state.ecoRuleIds[key];
@@ -1368,8 +1601,9 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.url && /^https?:\/\//.test(changeInfo.url)) {
+    try { lastTabOrigins.set(tabId, new URL(changeInfo.url).origin); } catch {}
     const result = await evaluateLinkSafetyForNavigation({ url: changeInfo.url, sourceUrl: "" }, { url: "" });
-    if (result.action === "block" && result.warningUrl && !changeInfo.url.startsWith(chrome.runtime.getURL(""))) {
+    if (["warn", "block"].includes(result.action) && result.warningUrl && !changeInfo.url.startsWith(chrome.runtime.getURL(""))) {
       await chrome.tabs.update(tabId, { url: result.warningUrl }).catch(() => {});
       return;
     }
@@ -1389,7 +1623,107 @@ chrome.webRequest.onErrorOccurred.addListener((details) => {
   void recordObservedNetworkBlock(details);
 }, { urls: ["<all_urls>"] });
 
+chrome.webRequest.onBeforeRequest.addListener((details) => {
+  recordPrivacyRequest(details);
+  if (details.type === "main_frame" && details.tabId >= 0 && /^https?:/i.test(details.url)) {
+    try { lastTabOrigins.set(details.tabId, new URL(details.url).origin); } catch {}
+    const current = redirectRequests.get(details.tabId);
+    const steps = current?.requestId === details.requestId ? current.steps : [];
+    redirectRequests.set(details.tabId, {
+      requestId: details.requestId,
+      createdAt: Date.now(),
+      steps: appendRedirectStep(steps, details.url)
+    });
+  }
+}, { urls: ["<all_urls>"] });
+
+chrome.webRequest.onBeforeRedirect.addListener((details) => {
+  if (details.type !== "main_frame" || details.tabId < 0) return;
+  const current = redirectRequests.get(details.tabId) ?? {
+    requestId: details.requestId,
+    createdAt: Date.now(),
+    steps: []
+  };
+  current.steps = appendRedirectStep(appendRedirectStep(current.steps, details.url), details.redirectUrl);
+  redirectRequests.set(details.tabId, current);
+}, { urls: ["<all_urls>"] });
+
+chrome.webRequest.onCompleted.addListener((details) => {
+  if (details.type !== "main_frame" || details.tabId < 0) return;
+  const current = redirectRequests.get(details.tabId);
+  if (!current || current.requestId !== details.requestId) return;
+  current.steps = appendRedirectStep(current.steps, details.url);
+  redirectRequests.delete(details.tabId);
+  if (current.steps.length < 2) return;
+  redirectHistoryWrite = redirectHistoryWrite.then(async () => {
+    const stored = await chrome.storage.local.get({ [REDIRECT_HISTORY_KEY]: { version: 1, entries: [] } });
+    const history = normalizeRedirectHistory(stored[REDIRECT_HISTORY_KEY]);
+    history.entries.unshift({ createdAt: current.createdAt, steps: current.steps });
+    await chrome.storage.local.set({ [REDIRECT_HISTORY_KEY]: normalizeRedirectHistory(history) });
+  }).catch(() => {});
+}, { urls: ["<all_urls>"] });
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.kind === "rememberCryptoGuardCopy") {
+    const fingerprint = String(message.fingerprint ?? "");
+    const family = String(message.family ?? "").slice(0, 40);
+    if (/^[a-f0-9]{64}$/.test(fingerprint) && family) {
+      cryptoGuardCopy = {
+        fingerprint,
+        family,
+        expiresAt: Date.now() + CRYPTO_GUARD_COPY_TTL_MS
+      };
+      sendResponse({ ok: true });
+    } else {
+      sendResponse({ ok: false });
+    }
+    return false;
+  }
+  if (message?.kind === "verifyCryptoGuardPaste") {
+    const fingerprint = String(message.fingerprint ?? "");
+    const family = String(message.family ?? "").slice(0, 40);
+    if (!cryptoGuardCopy || cryptoGuardCopy.expiresAt <= Date.now()) {
+      cryptoGuardCopy = null;
+      sendResponse({ known: false, matches: true });
+    } else {
+      sendResponse({
+        known: cryptoGuardCopy.family === family,
+        matches: cryptoGuardCopy.family !== family || cryptoGuardCopy.fingerprint === fingerprint
+      });
+    }
+    return false;
+  }
+  if (message?.kind === "getContinueWatchingPosition") {
+    getContinueWatchingPosition(String(message.identity ?? ""))
+      .then(sendResponse)
+      .catch(() => sendResponse({}));
+    return true;
+  }
+  if (message?.kind === "getContinueWatchingList") {
+    getContinueWatchingList()
+      .then((entries) => sendResponse({ entries }))
+      .catch(() => sendResponse({ entries: [] }));
+    return true;
+  }
+  if (message?.kind === "setContinueWatchingPosition") {
+    setContinueWatchingPosition({
+      identity: String(message.identity ?? ""),
+      position: Number(message.position),
+      duration: Number(message.duration),
+      completed: message.completed === true,
+      title: String(message.title ?? ""),
+      episode: String(message.episode ?? ""),
+      mediaType: String(message.mediaType ?? ""),
+      pageURL: String(sender.tab?.url ?? message.pageURL ?? "")
+    }).then(sendResponse).catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  if (message?.kind === "getSitePrivacyReceipt") {
+    sitePrivacyReceipt(Number(message.tabId), String(message.url ?? ""))
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error?.message ?? "Privacy receipt is unavailable" }));
+    return true;
+  }
   if (message?.kind === "recordSiteActivity" && sender?.tab && /^https?:/i.test(sender.url ?? "")) {
     const domain = hostnameFromURL(sender.url);
     activityStatisticsWrite = activityStatisticsWrite.then(async () => {
@@ -1405,6 +1739,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const stored = await chrome.storage.local.get({ [ACTIVITY_STATISTICS_KEY]: { version: 1, days: {} } });
       sendResponse(summarizeActivityStatistics(stored[ACTIVITY_STATISTICS_KEY], message.period));
     });
+    return true;
+  }
+  if (message?.kind === "getSiteDataCleanupState") {
+    if (Number.isInteger(message.tabId)) {
+      try { lastTabOrigins.set(message.tabId, new URL(message.url).origin); } catch {}
+    }
+    chrome.storage.local.get({ [SITE_DATA_CLEANUP_KEY]: [] }).then((stored) => {
+      const sites = sanitizeCleanupSites(stored[SITE_DATA_CLEANUP_KEY]);
+      const site = registrableSite(message.url);
+      sendResponse({ site, enabled: Boolean(site && sites.includes(site)), sites });
+    });
+    return true;
+  }
+  if (message?.kind === "setSiteDataCleanup") {
+    if (Number.isInteger(message.tabId)) {
+      try { lastTabOrigins.set(message.tabId, new URL(message.url).origin); } catch {}
+    }
+    chrome.storage.local.get({ [SITE_DATA_CLEANUP_KEY]: [] }).then(async (stored) => {
+      const sites = sanitizeCleanupSites(stored[SITE_DATA_CLEANUP_KEY]);
+      const site = registrableSite(message.url);
+      if (!site) throw new Error("Site is unavailable");
+      const next = message.enabled
+        ? sanitizeCleanupSites([...sites, site])
+        : sites.filter((candidate) => candidate !== site);
+      await chrome.storage.local.set({ [SITE_DATA_CLEANUP_KEY]: next });
+      sendResponse({ site, enabled: next.includes(site), sites: next });
+    }).catch((error) => sendResponse({ error: error?.message ?? "Cleanup policy could not be changed" }));
+    return true;
+  }
+  if (message?.kind === "getRedirectHistory") {
+    redirectHistoryWrite.then(async () => {
+      const stored = await chrome.storage.local.get({ [REDIRECT_HISTORY_KEY]: { version: 1, entries: [] } });
+      sendResponse(normalizeRedirectHistory(stored[REDIRECT_HISTORY_KEY]));
+    });
+    return true;
+  }
+  if (message?.kind === "clearRedirectHistory") {
+    redirectHistoryWrite = redirectHistoryWrite.then(() => chrome.storage.local.set({
+      [REDIRECT_HISTORY_KEY]: { version: 1, entries: [] }
+    }));
+    redirectHistoryWrite.then(() => sendResponse({ ok: true }));
     return true;
   }
   if (message?.kind === "clearSiteActivityStatistics") {
@@ -1442,6 +1817,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.kind === "recordSponsorSegmentSkip" && senderIsYouTube(sender)) {
+    recordPrivacyBlock(sender.tab?.id, sender.url);
     enqueueBlockingEvent({
       type: "sponsor",
       site: "youtube.com",
@@ -1452,7 +1828,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.kind === "recordVideoAdAction" && sender?.tab && /^https?:/.test(sender.url ?? "")) {
     const site = hostnameFromURL(sender.url);
-    if (site) enqueueBlockingEvent({ type: "video", site, resource: `${site}:video-ad` });
+    if (site) {
+      recordPrivacyBlock(sender.tab.id, sender.url);
+      enqueueBlockingEvent({ type: "video", site, resource: `${site}:video-ad` });
+    }
     sendResponse({ ok: true });
     return false;
   }
@@ -1461,6 +1840,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(sendResponse)
       .catch(() => sendResponse({ action: "allow", url: message.url }));
     return true;
+  }
+  if (message?.kind === "navigateWarning") {
+    if (message.target && message.target !== "_self") {
+      chrome.tabs.create({ url: message.url }).catch(() => {});
+    } else {
+      chrome.tabs.update(sender.tab?.id, { url: message.url }).catch(() => {});
+    }
+    sendResponse({ ok: true });
+    return false;
   }
   if (message?.kind === "setExtensionEnabled") {
     setExtensionEnabled(Boolean(message.enabled))

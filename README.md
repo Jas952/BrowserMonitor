@@ -7,7 +7,7 @@
 <p align="center">
   <img alt="Chrome extension" src="https://img.shields.io/badge/Chrome-Extension-4285F4?style=flat-square&logo=googlechrome&logoColor=white" />
   <img alt="Manifest V3" src="https://img.shields.io/badge/Manifest-V3-607D8B?style=flat-square" />
-  <img alt="Version 1.0.1" src="https://img.shields.io/badge/version-1.0.1-789C8F?style=flat-square" />
+  <img alt="Version 1.1.0" src="https://img.shields.io/badge/version-1.1.0-789C8F?style=flat-square" />
   <img alt="Local-first" src="https://img.shields.io/badge/Local--first-No_analytics-3D7564?style=flat-square" />
   <img alt="Codex helped with development" src="https://img.shields.io/badge/Helped_by-Codex-111827?style=flat-square&logo=openai&logoColor=white" />
 </p>
@@ -25,6 +25,10 @@ Browser Monitor is a local-first Chrome extension that combines content protecti
 - blocks common ads, trackers, and cryptomining requests with Chrome Declarative Net Request;
 - adds specialized YouTube/Rutube video-ad controls and optional SponsorBlock community segment skipping;
 - warns before opening suspicious links with local checks for shorteners, lookalike domains, punycode, redirects, and risky social-feed destinations;
+- labels risky search results on popular search engines and lets trusted domains be allowed locally;
+- protects copied wallet addresses against invisible-character tricks and paste substitution attempts;
+- remembers supported long-form videos and shows a local Continue Watching list in the popup;
+- shows a local privacy receipt for the current site on demand;
 - can hide selected domains from local Chrome history and supported search suggestions after explicit history permission;
 - shows live local blocking statistics for today and a rolling seven-day window, including top sites and resources;
 - measures active visits, reading, and video time only while a page is visibly in use;
@@ -32,7 +36,7 @@ Browser Monitor is a local-first Chrome extension that combines content protecti
 - pauses expensive tab activity through reversible Eco Mode controls;
 - hides supported cookie banners, newsletter prompts, surveys, notification prompts, autoplay, and floating video;
 - provides site exceptions, custom filters, an element picker, Image Swap, Picture-in-Picture, and optional cookie export;
-- prepares site-filter reports and feature requests for explicit submission through GitHub;
+- prepares site-filter reports and feature requests as explicit email drafts;
 - includes separate English and Russian settings.
 
 <p align="center">
@@ -41,7 +45,7 @@ Browser Monitor is a local-first Chrome extension that combines content protecti
 
 ## Install
 
-1. Download `browser-monitor-1.0.1.zip` from the [latest release](https://github.com/Jas952/BrowserMonitor/releases/latest) and extract it.
+1. Download `browser-monitor-1.1.0.zip` from the [latest release](https://github.com/Jas952/BrowserMonitor/releases/latest) and extract it.
 2. Open `chrome://extensions` and enable **Developer mode**.
 3. Select **Load unpacked** and choose the extracted folder containing `manifest.json`.
 4. Pin Browser Monitor to the Chrome toolbar. When using a source checkout instead, choose its `Extension` folder.
@@ -65,12 +69,8 @@ All tab measurements and settings remain in the local Chrome profile. Cookies, d
 
 ## Contact
 
-<p>
-  <img src="./docs/assets-github/n1.gif" alt="Project author avatar" width="92" height="92" align="left" />
-</p>
 <pre hspace="12">
   <img src="./docs/assets-github/contacts/tg.jpg" alt="Telegram" height="14" /> Telegram ······ <a href="https://t.me/Jas953/">t.me/Jas953</a>
   <img src="./docs/assets-github/contacts/lnk.jpg" alt="LinkedIn" height="14" /> LinkedIn ······ <a href="https://www.linkedin.com/in/jas952/">linkedin.com/in/jas952</a>
   <img src="./docs/assets-github/contacts/x.jpg" alt="X" height="14" /> X        ······ <a href="https://x.com/not__jas">x.com/not__jas</a>
 </pre>
-<br clear="left" />

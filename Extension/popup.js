@@ -1,4 +1,5 @@
 import { browserLanguage, localizeDocument, translate } from "./localization.js";
+import { duplicateTabGroups } from "./site-tools.js";
 
 const extensionToggle = document.querySelector("#extension-toggle");
 const summary = document.querySelector("#summary");
@@ -15,6 +16,18 @@ const siteControlTitle = document.querySelector("#site-control-title");
 const siteControlDetail = document.querySelector("#site-control-detail");
 const siteControlAction = document.querySelector("#site-control-action");
 const pauseSiteButton = document.querySelector("#pause-site-button");
+const cleanupSiteButton = document.querySelector("#cleanup-site-button");
+const privacyReceiptButton = document.querySelector("#privacy-receipt-button");
+const privacyReceipt = document.querySelector("#privacy-receipt");
+const privacyReceiptDomain = document.querySelector("#privacy-receipt-domain");
+const privacyReceiptState = document.querySelector("#privacy-receipt-state");
+const receiptBlocked = document.querySelector("#receipt-blocked");
+const receiptThirdParty = document.querySelector("#receipt-third-party");
+const receiptCookies = document.querySelector("#receipt-cookies");
+const receiptStorage = document.querySelector("#receipt-storage");
+const receiptDomains = document.querySelector("#receipt-domains");
+const receiptDetailsButton = document.querySelector("#receipt-details-button");
+const siteActionStatus = document.querySelector("#site-action-status");
 const exceptions = document.querySelector("#exceptions");
 const exceptionCount = document.querySelector("#exception-count");
 const exceptionList = document.querySelector("#exception-list");
@@ -25,6 +38,15 @@ const blockElementButton = document.querySelector("#block-element-button");
 const statisticsButton = document.querySelector("#statistics-button");
 const headerStatisticsButton = document.querySelector("#header-statistics-button");
 const feedbackButton = document.querySelector("#feedback-button");
+const watchHistoryButton = document.querySelector("#watch-history-button");
+const duplicateTabsButton = document.querySelector("#duplicate-tabs-button");
+const toolStrip = document.querySelector("#tool-strip");
+const previousTools = document.querySelector("#previous-tools");
+const nextTools = document.querySelector("#next-tools");
+const watchHistoryView = document.querySelector("#watch-history-view");
+const watchHistoryList = document.querySelector("#watch-history-list");
+const closeWatchHistory = document.querySelector("#close-watch-history");
+const tabActivityView = document.querySelector("#tab-activity-view");
 const previousTabs = document.querySelector("#previous-tabs");
 const nextTabs = document.querySelector("#next-tabs");
 const tabPageLabel = document.querySelector("#tab-page-label");
@@ -56,6 +78,11 @@ const cookiePageLabel = document.querySelector("#cookie-page-label");
 const cookieStatus = document.querySelector("#cookie-status");
 const settingsButton = document.querySelector("#settings-button");
 const headerActivityButton = document.querySelector("#header-activity-button");
+const duplicatesPanel = document.querySelector("#duplicates-panel");
+const closeDuplicates = document.querySelector("#close-duplicates");
+const duplicatesList = document.querySelector("#duplicates-list");
+const duplicatesCount = document.querySelector("#duplicates-count");
+const closeAllDuplicates = document.querySelector("#close-all-duplicates");
 
 let activeTab = null;
 let latestSnapshot = null;
@@ -67,6 +94,12 @@ let cookiePage = 0;
 let currentCookies = [];
 let detailedTabId = null;
 let language = "en";
+let siteActionStatusTimer = null;
+let currentDuplicateGroups = [];
+let toolDrag = null;
+let suppressToolClick = false;
+let toolSnapTimer = null;
+let toolPageAnimationUntil = 0;
 const t = (key, values) => translate(language, key, values);
 const performanceTextKeys = new Map([
   ["Long main-thread blocks", "reasonLongBlocks"],
@@ -92,6 +125,16 @@ function formatBytes(value) {
   return `${(value / 1_000_000).toFixed(1)} MB`;
 }
 
+function formatMediaTime(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(total / 3_600);
+  const minutes = Math.floor((total % 3_600) / 60);
+  const remainder = String(total % 60).padStart(2, "0");
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${remainder}`
+    : `${minutes}:${remainder}`;
+}
+
 function hostname(url) {
   try { return new URL(url).hostname; } catch { return t("currentSite"); }
 }
@@ -99,6 +142,333 @@ function hostname(url) {
 function closePanels() {
   tabDetailPanel.hidden = true;
   cookiesPanel.hidden = true;
+  duplicatesPanel.hidden = true;
+}
+
+async function refreshSiteDataCleanup() {
+  const state = await chrome.runtime.sendMessage({
+    kind: "getSiteDataCleanupState",
+    tabId: activeTab?.id,
+    url: activeTab?.url
+  }).catch(() => ({}));
+  cleanupSiteButton.disabled = !activeTab || !state.site;
+  cleanupSiteButton.setAttribute("aria-pressed", String(state.enabled === true));
+}
+
+function renderDuplicateGroups(groups) {
+  currentDuplicateGroups = groups;
+  const duplicateCount = groups.reduce((total, group) => total + group.tabs.length - 1, 0);
+  duplicatesCount.textContent = formatNumber(duplicateCount);
+  closeAllDuplicates.disabled = duplicateCount === 0;
+  duplicatesList.replaceChildren();
+  if (!groups.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = t("noDuplicateTabs");
+    duplicatesList.append(empty);
+    return;
+  }
+  for (const group of groups) {
+    const item = document.createElement("article");
+    item.className = "duplicate-group";
+    const title = document.createElement("strong");
+    title.textContent = group.tabs.find((tab) => tab.title)?.title || hostname(group.url);
+    title.title = group.url;
+    const detail = document.createElement("span");
+    detail.textContent = t("duplicateCopies", { count: group.tabs.length });
+    item.append(title, detail);
+    duplicatesList.append(item);
+  }
+}
+
+async function openDuplicateTabs() {
+  closePanels();
+  duplicatesPanel.hidden = false;
+  const tabs = await chrome.tabs.query({ currentWindow: true });
+  renderDuplicateGroups(duplicateTabGroups(tabs));
+}
+
+async function closeDuplicateTabs() {
+  const ids = [];
+  for (const group of currentDuplicateGroups) {
+    const keeper = group.tabs.find((tab) => tab.active) ?? group.tabs[0];
+    ids.push(...group.tabs.filter((tab) => tab.id !== keeper.id).map((tab) => tab.id));
+  }
+  if (ids.length) await chrome.tabs.remove(ids);
+  await openDuplicateTabs();
+  await refresh();
+}
+
+function orderedToolButtons() {
+  return [...toolStrip.querySelectorAll(".tool-button[data-tool-id]")];
+}
+
+const TOOLS_PER_PAGE = 4;
+
+function toolPageTargets() {
+  const buttons = orderedToolButtons();
+  const pageCount = Math.max(1, Math.ceil(buttons.length / TOOLS_PER_PAGE));
+  const maxScroll = Math.max(0, toolStrip.scrollWidth - toolStrip.clientWidth);
+  const origin = buttons[0]?.offsetLeft ?? 0;
+  return Array.from(
+    { length: pageCount },
+    (_, index) => Math.min((buttons[index * TOOLS_PER_PAGE]?.offsetLeft ?? origin) - origin, maxScroll)
+  );
+}
+
+function nearestToolPage() {
+  const targets = toolPageTargets();
+  return targets.reduce(
+    (nearest, target, index) => Math.abs(target - toolStrip.scrollLeft) < Math.abs(targets[nearest] - toolStrip.scrollLeft) ? index : nearest,
+    0
+  );
+}
+
+function updateToolNavigation() {
+  const page = nearestToolPage();
+  const lastPage = toolPageTargets().length - 1;
+  previousTools.disabled = page <= 0;
+  nextTools.disabled = page >= lastPage;
+}
+
+function scrollToToolPage(page, behavior = "smooth") {
+  const targets = toolPageTargets();
+  const target = targets[Math.max(0, Math.min(page, targets.length - 1))] ?? 0;
+  clearTimeout(toolSnapTimer);
+  toolPageAnimationUntil = behavior === "smooth" ? Date.now() + 260 : 0;
+  toolStrip.scrollTo({ left: target, behavior });
+  setTimeout(updateToolNavigation, behavior === "smooth" ? 240 : 0);
+}
+
+function updateToolLayout() {
+  toolStrip.style.setProperty("--tool-tail-space", "0px");
+  void toolStrip.offsetWidth;
+  const buttons = orderedToolButtons();
+  const pageCount = Math.max(1, Math.ceil(buttons.length / TOOLS_PER_PAGE));
+  const origin = buttons[0]?.offsetLeft ?? 0;
+  const lastPageStart = (buttons[(pageCount - 1) * TOOLS_PER_PAGE]?.offsetLeft ?? origin) - origin;
+  const tailSpace = Math.max(0, lastPageStart + toolStrip.clientWidth - toolStrip.scrollWidth);
+  toolStrip.style.setProperty("--tool-tail-space", `${tailSpace}px`);
+  updateToolNavigation();
+}
+
+function scheduleToolSnap() {
+  clearTimeout(toolSnapTimer);
+  toolSnapTimer = setTimeout(() => scrollToToolPage(nearestToolPage()), 110);
+}
+
+async function loadToolOrder() {
+  const { toolOrder = [] } = await chrome.storage.local.get({ toolOrder: [] });
+  const byId = new Map(orderedToolButtons().map((button) => [button.dataset.toolId, button]));
+  for (const id of toolOrder) {
+    const button = byId.get(id);
+    if (button) toolStrip.insertBefore(button, pipStatus);
+  }
+  updateToolLayout();
+}
+
+function persistToolOrder() {
+  return chrome.storage.local.set({ toolOrder: orderedToolButtons().map((button) => button.dataset.toolId) });
+}
+
+function toolLayoutLeft(button) {
+  return toolStrip.getBoundingClientRect().left + button.offsetLeft - toolStrip.scrollLeft;
+}
+
+function animateToolShift(previousPositions, draggedButton) {
+  for (const button of orderedToolButtons()) {
+    if (button === draggedButton || !previousPositions.has(button)) continue;
+    const delta = previousPositions.get(button) - toolLayoutLeft(button);
+    if (Math.abs(delta) < 1) continue;
+    button.style.transition = "none";
+    button.style.transform = `translateX(${delta}px)`;
+    requestAnimationFrame(() => {
+      button.style.transition = "";
+      button.style.transform = "";
+    });
+  }
+}
+
+toolStrip.addEventListener("pointerdown", (event) => {
+  const button = event.target.closest(".tool-button[data-tool-id]");
+  if (!button || event.button !== 0) return;
+  const bounds = button.getBoundingClientRect();
+  toolDrag = {
+    button,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    grabOffsetX: event.clientX - bounds.left,
+    layoutLeft: toolLayoutLeft(button),
+    moved: false
+  };
+  button.setPointerCapture(event.pointerId);
+});
+
+toolStrip.addEventListener("pointermove", (event) => {
+  if (!toolDrag || toolDrag.pointerId !== event.pointerId) return;
+  if (!toolDrag.moved && Math.abs(event.clientX - toolDrag.startX) < 5) return;
+  toolDrag.moved = true;
+  toolStrip.classList.add("reordering");
+  toolDrag.button.classList.add("dragging");
+  const desiredLeft = event.clientX - toolDrag.grabOffsetX;
+  toolDrag.button.style.setProperty("--tool-drag-x", `${desiredLeft - toolDrag.layoutLeft}px`);
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".tool-button[data-tool-id]");
+  if (target && target !== toolDrag.button && target.parentElement === toolStrip) {
+    const previousPositions = new Map(orderedToolButtons().map((button) => [button, toolLayoutLeft(button)]));
+    const before = event.clientX < target.getBoundingClientRect().left + target.offsetWidth / 2;
+    toolStrip.insertBefore(toolDrag.button, before ? target : target.nextSibling);
+    toolDrag.layoutLeft = toolLayoutLeft(toolDrag.button);
+    toolDrag.button.style.setProperty("--tool-drag-x", `${desiredLeft - toolDrag.layoutLeft}px`);
+    animateToolShift(previousPositions, toolDrag.button);
+  }
+  const bounds = toolStrip.getBoundingClientRect();
+  if (event.clientX < bounds.left + 24) toolStrip.scrollLeft -= 18;
+  if (event.clientX > bounds.right - 24) toolStrip.scrollLeft += 18;
+});
+
+async function finishToolReorder(event) {
+  if (!toolDrag || toolDrag.pointerId !== event.pointerId) return;
+  if (toolDrag.button.hasPointerCapture(event.pointerId)) {
+    toolDrag.button.releasePointerCapture(event.pointerId);
+  }
+  suppressToolClick = toolDrag.moved;
+  const droppedButton = toolDrag.button;
+  toolDrag.button.classList.remove("dragging");
+  toolStrip.classList.remove("reordering");
+  toolDrag.button.style.removeProperty("--tool-drag-x");
+  if (toolDrag.moved) {
+    await persistToolOrder();
+    updateToolLayout();
+    const index = orderedToolButtons().indexOf(droppedButton);
+    scrollToToolPage(Math.floor(index / TOOLS_PER_PAGE));
+  }
+  toolDrag = null;
+  setTimeout(() => { suppressToolClick = false; }, 0);
+}
+toolStrip.addEventListener("pointerup", finishToolReorder);
+toolStrip.addEventListener("pointercancel", finishToolReorder);
+
+toolStrip.addEventListener("click", (event) => {
+  if (suppressToolClick) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+}, true);
+
+function closeWatchHistoryView() {
+  watchHistoryView.hidden = true;
+  tabActivityView.hidden = false;
+  watchHistoryButton.classList.remove("active");
+  watchHistoryButton.setAttribute("aria-pressed", "false");
+}
+
+function watchHistoryIcon(mediaType) {
+  if (mediaType === "episode") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="m9 9 6 3-6 3V9Z"/></svg>';
+  }
+  if (mediaType === "movie") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v13H5zM5 10h14M8 6l2 4M13 6l2 4"/></svg>';
+  }
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="2"/><path d="m10 9 5 3-5 3V9Z"/></svg>';
+}
+
+function renderWatchHistory(entries = []) {
+  watchHistoryList.replaceChildren();
+  if (entries.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = t("watchHistoryEmpty");
+    watchHistoryList.append(empty);
+    return;
+  }
+  for (const entry of entries) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "watch-history-item";
+    item.dataset.mediaType = entry.mediaType;
+    item.title = t("watchHistoryOpen", { site: entry.site });
+
+    const kind = document.createElement("span");
+    kind.className = "watch-kind";
+    kind.innerHTML = watchHistoryIcon(entry.mediaType);
+
+    const copy = document.createElement("span");
+    copy.className = "watch-copy";
+    const site = document.createElement("span");
+    site.className = "watch-site";
+    site.textContent = entry.site;
+    const title = document.createElement("span");
+    title.className = "watch-title";
+    title.textContent = entry.title || t("watchHistoryUntitled");
+    const meta = document.createElement("span");
+    meta.className = "watch-meta";
+    const typeLabel = t(entry.mediaType === "episode"
+      ? "watchHistoryEpisode"
+      : entry.mediaType === "movie"
+        ? "watchHistoryMovie"
+        : "watchHistoryVideo");
+    meta.textContent = [typeLabel, entry.episode].filter(Boolean).join(" · ");
+    copy.append(site, title, meta);
+
+    const time = document.createElement("span");
+    time.className = "watch-time";
+    time.textContent = formatMediaTime(entry.position);
+    item.append(kind, copy, time);
+    item.addEventListener("click", async () => {
+      await chrome.tabs.create({ url: entry.url, active: true });
+      window.close();
+    });
+    watchHistoryList.append(item);
+  }
+}
+
+async function openWatchHistoryView() {
+  tabActivityView.hidden = true;
+  watchHistoryView.hidden = false;
+  watchHistoryButton.classList.add("active");
+  watchHistoryButton.setAttribute("aria-pressed", "true");
+  watchHistoryList.replaceChildren();
+  const loading = document.createElement("div");
+  loading.className = "empty";
+  loading.textContent = t("watchHistoryLoading");
+  watchHistoryList.append(loading);
+  const result = await chrome.runtime.sendMessage({ kind: "getContinueWatchingList" }).catch(() => ({ entries: [] }));
+  if (!watchHistoryView.hidden) renderWatchHistory(result?.entries ?? []);
+}
+
+function showSiteActionStatus(message) {
+  clearTimeout(siteActionStatusTimer);
+  siteActionStatus.textContent = message;
+  siteActionStatus.hidden = false;
+  siteActionStatusTimer = setTimeout(() => {
+    siteActionStatus.hidden = true;
+  }, 3_500);
+}
+
+function renderPrivacyReceipt(receipt) {
+  privacyReceiptDomain.textContent = receipt?.domain || latestBlockerState?.domain || t("currentSite");
+  const protectionActive = receipt?.protectionActive === true;
+  privacyReceiptState.textContent = protectionActive ? t("receiptProtected") : t("receiptPaused");
+  privacyReceiptState.classList.toggle("warning", !protectionActive);
+  receiptBlocked.textContent = formatNumber(receipt?.blockedRequests);
+  receiptThirdParty.textContent = formatNumber(receipt?.thirdPartyDomains?.length);
+  receiptCookies.textContent = formatNumber(receipt?.firstPartyCookies);
+  receiptStorage.textContent = formatNumber((receipt?.localStorageKeys ?? 0) + (receipt?.sessionStorageKeys ?? 0));
+  const domains = (receipt?.thirdPartyDomains ?? []).map((entry) => entry.domain);
+  receiptDomains.textContent = domains.length
+    ? t("receiptDomains", { domains: domains.join(" · ") })
+    : t("receiptNoDomains");
+}
+
+async function refreshPrivacyReceipt() {
+  if (privacyReceipt.hidden || !activeTab) return;
+  privacyReceiptState.textContent = t("receiptCollecting");
+  const receipt = await chrome.runtime.sendMessage({
+    kind: "getSitePrivacyReceipt",
+    tabId: activeTab.id,
+    url: activeTab.url
+  });
+  renderPrivacyReceipt(receipt);
 }
 
 function renderSnapshot(snapshot) {
@@ -347,6 +717,7 @@ function renderProtection(state) {
   const domain = state?.domain;
   siteToggle.disabled = !enabled || !domain;
   pauseSiteButton.disabled = !enabled || !domain || state.siteAllowlisted;
+  privacyReceiptButton.disabled = !domain;
   siteControlTitle.textContent = domain || t("currentSite");
   if (!domain) {
     siteControlDetail.textContent = t("internalUnavailable");
@@ -360,7 +731,14 @@ function renderProtection(state) {
       : t("protectionActiveHere");
     siteControlAction.textContent = t("excludeSite");
   }
-  pauseSiteButton.textContent = state.sitePausedUntil ? t("resume") : t("pause10");
+  const paused = Boolean(state.sitePausedUntil);
+  pauseSiteButton.setAttribute("aria-pressed", String(paused));
+  pauseSiteButton.title = paused ? t("resumeProtection") : t("pause10");
+  pauseSiteButton.setAttribute("aria-label", paused ? t("resumeProtection") : t("pause10"));
+  if (!domain) {
+    privacyReceipt.hidden = true;
+    privacyReceiptButton.setAttribute("aria-expanded", "false");
+  }
   renderExceptions(state?.allowlistedSites ?? []);
 }
 
@@ -413,7 +791,7 @@ async function refresh() {
     await refreshActiveTab();
     const snapshot = await chrome.runtime.sendMessage({ kind: "collectNow" });
     renderSnapshot(snapshot);
-    await Promise.all([refreshProtection(), refreshPictureInPictureState()]);
+    await Promise.all([refreshProtection(), refreshPictureInPictureState(), refreshPrivacyReceipt(), refreshSiteDataCleanup()]);
   } finally {
     refreshButton.disabled = false;
   }
@@ -429,7 +807,12 @@ async function playActivationAnimationInActiveTab() {
     try {
       await chrome.scripting.executeScript({
         target: { tabId: activeTab.id },
-        files: ["content.js"]
+        files: ["crypto-guard-main.js"],
+        world: "MAIN"
+      });
+      await chrome.scripting.executeScript({
+        target: { tabId: activeTab.id },
+        files: ["page-guard.js", "content.js"]
       });
       const result = await chrome.tabs.sendMessage(activeTab.id, message);
       return result?.ok === true;
@@ -479,10 +862,12 @@ siteToggle.addEventListener("click", async () => {
     url: activeTab?.url
   });
   renderProtection(state);
+  if (!privacyReceipt.hidden) await refreshPrivacyReceipt();
 });
 
 pauseSiteButton.addEventListener("click", async () => {
   if (!latestBlockerState?.domain) return;
+  const wasPaused = Boolean(latestBlockerState.sitePausedUntil);
   pauseSiteButton.disabled = true;
   const state = await chrome.runtime.sendMessage({
     kind: "setSiteTemporarilyPaused",
@@ -492,6 +877,52 @@ pauseSiteButton.addEventListener("click", async () => {
     url: activeTab?.url
   });
   renderProtection(state);
+  privacyReceipt.hidden = true;
+  privacyReceiptButton.setAttribute("aria-expanded", "false");
+  showSiteActionStatus(wasPaused ? t("siteProtectionResumed") : t("sitePausedNotice"));
+});
+
+cleanupSiteButton.addEventListener("click", async () => {
+  if (!activeTab) return;
+  const enabling = cleanupSiteButton.getAttribute("aria-pressed") !== "true";
+  if (enabling) {
+    const granted = await chrome.permissions.request({ permissions: ["browsingData"] });
+    if (!granted) {
+      showSiteActionStatus(t("cleanupPermissionDenied"));
+      return;
+    }
+  }
+  cleanupSiteButton.disabled = true;
+  const state = await chrome.runtime.sendMessage({
+    kind: "setSiteDataCleanup",
+    tabId: activeTab.id,
+    url: activeTab.url,
+    enabled: enabling
+  });
+  cleanupSiteButton.setAttribute("aria-pressed", String(state.enabled === true));
+  cleanupSiteButton.disabled = false;
+  showSiteActionStatus(state.enabled ? t("cleanupSiteDataEnabled") : t("cleanupSiteDataDisabled"));
+});
+
+privacyReceiptButton.addEventListener("click", async () => {
+  const opening = privacyReceipt.hidden;
+  privacyReceipt.hidden = !opening;
+  privacyReceiptButton.setAttribute("aria-expanded", String(opening));
+  if (opening) await refreshPrivacyReceipt();
+});
+
+receiptDetailsButton.addEventListener("click", async () => {
+  if (!activeTab) return;
+  try {
+    await chrome.windows.create({
+      url: chrome.runtime.getURL(`receipt-details.html?tabId=${activeTab.id}`),
+      type: "popup",
+      width: 580,
+      height: 600
+    });
+  } catch {
+    await chrome.tabs.create({ url: chrome.runtime.getURL(`receipt-details.html?tabId=${activeTab.id}`) });
+  }
 });
 
 pipButton.addEventListener("click", async () => {
@@ -524,6 +955,9 @@ nextTabs.addEventListener("click", () => {
 
 closeTabDetail.addEventListener("click", closePanels);
 closeCookies.addEventListener("click", closePanels);
+closeDuplicates.addEventListener("click", closePanels);
+duplicateTabsButton.addEventListener("click", openDuplicateTabs);
+closeAllDuplicates.addEventListener("click", closeDuplicateTabs);
 cookiesButton.addEventListener("click", openCookies);
 blockElementButton.addEventListener("click", async () => {
   if (!activeTab) return;
@@ -601,6 +1035,36 @@ async function openStatisticsWindow() {
 
 statisticsButton.addEventListener("click", openStatisticsWindow);
 headerStatisticsButton.addEventListener("click", openStatisticsWindow);
+watchHistoryButton.addEventListener("click", () => {
+  if (watchHistoryView.hidden) void openWatchHistoryView();
+  else closeWatchHistoryView();
+});
+closeWatchHistory.addEventListener("click", closeWatchHistoryView);
+function scrollToolsWithWheel(event) {
+  if (toolStrip.scrollWidth <= toolStrip.clientWidth) return;
+  if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+  event.preventDefault();
+  if (Math.abs(event.deltaY) < 2 || Date.now() < toolPageAnimationUntil) return;
+  scrollToToolPage(nearestToolPage() + Math.sign(event.deltaY));
+}
+
+toolStrip.addEventListener("wheel", scrollToolsWithWheel, { passive: false });
+toolStrip.addEventListener("scroll", () => {
+  updateToolNavigation();
+  if (!toolDrag?.moved && Date.now() >= toolPageAnimationUntil) scheduleToolSnap();
+}, { passive: true });
+previousTools.addEventListener("click", () => scrollToToolPage(nearestToolPage() - 1));
+nextTools.addEventListener("click", () => scrollToToolPage(nearestToolPage() + 1));
+toolStrip.addEventListener("keydown", (event) => {
+  if (event.target !== toolStrip || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  event.preventDefault();
+  scrollToToolPage(nearestToolPage() + (event.key === "ArrowRight" ? 1 : -1));
+});
+window.addEventListener("resize", () => {
+  const currentPage = nearestToolPage();
+  updateToolLayout();
+  scrollToToolPage(currentPage, "auto");
+});
 feedbackButton.addEventListener("click", async () => {
   const params = activeTab
     ? new URLSearchParams({ type: "site", url: activeTab.url, title: activeTab.title || "" })
@@ -619,7 +1083,11 @@ async function bootstrap() {
   language = uiPreferences.language || browserLanguage();
   localizeDocument(language);
   document.documentElement.dataset.theme = uiPreferences.theme === "system" ? "" : uiPreferences.theme;
+  await loadToolOrder();
   await refresh();
+  updateToolLayout();
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  document.body.classList.remove("preload");
 }
 
 bootstrap();
