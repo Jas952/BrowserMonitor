@@ -16,7 +16,7 @@ Only implemented user-facing capabilities are listed here.
 | Statistics | Local blocking and activity reports: visits and active, reading, and video time. |
 | Site Activity | Tab activity explanation and a map of recent cross-domain redirects. |
 | Tab tools | Duplicate-tab detection and closing, plus a configurable popup tool order. |
-| Feedback | Local report draft and prefilled email opening only after explicit user action. |
+| Feedback | Direct feedback request form via a configured Cloudflare endpoint after explicit user action. |
 | Interface | Popup, Settings, Statistics, Activity, and warning pages in English and Russian. |
 
 ## Main limitations
@@ -26,5 +26,6 @@ Only implemented user-facing capabilities are listed here.
 - Video resume works only with recognized long-form HTML5 video.
 - Activity analytics excludes background and inactive tabs.
 - SponsorBlock uses an external community source only when enabled.
+- Direct feedback sending requires a deployed Cloudflare Worker endpoint and configured email provider secret.
 
 See [[Architecture]] for technical details and [[Opportunities]] for future ideas.

@@ -97,6 +97,30 @@ The README describes the current stable product:
 
 The README must not become a changelog. Update obsolete capabilities and old ZIP versions with each release.
 
+## Repository settings
+
+Current repository settings should support a public, local-first Chrome extension without requiring a website.
+
+Recommended enabled settings:
+
+- Secret scanning and push protection, because the repository contains release assets and development automation.
+- Code scanning through the CodeQL workflow in `.github/workflows/codeql.yml`.
+- Dependabot updates for GitHub Actions and the npm package metadata in `Extension/`.
+- Private vulnerability reporting and the repository security policy in `SECURITY.md`.
+- Branch protection for `main` before collaborative work or release automation grows.
+
+Recommended repository metadata:
+
+- Description: `Local-first Chrome extension for ad blocking, link protection, tab activity monitoring and browser privacy tools`.
+- Topics: `chrome-extension`, `manifest-v3`, `privacy`, `browser-security`, `ad-blocker`, `tracker-blocker`, `phishing-protection`, `tab-monitoring`, `sponsorblock`, `javascript`.
+- Social preview: use a product image from `docs/readme-media/` or a dedicated preview image that clearly shows Browser Monitor rather than a generic graphic.
+
+Settings to leave empty or disabled for now:
+
+- GitHub Pages, because Browser Monitor does not currently need a project website.
+- GitHub Apps, unless a specific integration is needed for release automation, issue triage, or security workflows.
+- Tags do not need manual setup beyond release tags named `vX.Y.Z`.
+
 ## Release process
 
 1. Match claimed capabilities against the actual code.
