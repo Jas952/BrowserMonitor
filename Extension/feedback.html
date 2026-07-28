@@ -17,14 +17,14 @@
     <label class="field"><span id="email-label">Your email</span><input id="feedback-email" type="email" autocomplete="email" maxlength="254" placeholder="name@example.com"><small id="email-note" class="email-note">This email is used only so the developer can reply to you.</small></label>
     <label class="field"><span id="message-label">Describe your request</span><textarea id="feedback-message" rows="8" maxlength="5000" required></textarea><small id="message-limit">0 / 5000</small></label>
     <div class="attachment">
-      <div><strong id="attachment-title">Screenshot</strong><p id="attachment-detail">PNG, JPEG or WebP up to 2 MB. It stays local until you attach it to the email.</p></div>
+      <div><strong id="attachment-title">Screenshot</strong><p id="attachment-detail">PNG, JPEG or WebP up to 2 MB. It is sent only with this request.</p></div>
       <button id="choose-feedback-image" type="button">Choose image</button>
       <input id="feedback-image" type="file" accept="image/png,image/jpeg,image/webp" hidden>
     </div>
     <div id="attachment-preview" class="attachment-preview" hidden><img alt=""><span></span><button type="button" aria-label="Remove attachment">×</button></div>
     <p id="feedback-status" class="status" role="status" aria-live="polite"></p>
   </main>
-  <footer><p id="delivery-note">Sending opens a pre-filled email. Nothing is sent silently; you review and send it in your mail app.</p><button id="send-feedback" type="button">Continue to send</button></footer>
+  <footer><p id="delivery-note">Sending delivers this request directly to the developer email through the Browser Monitor feedback endpoint.</p><button id="send-feedback" type="button">Send request</button></footer>
   <script type="module" src="feedback.js"></script>
 </body>
 </html>

@@ -661,13 +661,21 @@ try {
     const wasHidden = pagination.hidden;
     pagination.hidden = false;
     const rows = [...list.querySelectorAll(".tab")].slice(0, 4);
-    const paginationTop = pagination.getBoundingClientRect().top;
+    const heading = document.querySelector("#tab-activity-view .section-heading");
+    const paginationRect = pagination.getBoundingClientRect();
+    const headingRect = heading.getBoundingClientRect();
+    const firstRowTop = rows[0].getBoundingClientRect().top;
     const lastRowBottom = rows.at(-1).getBoundingClientRect().bottom;
     const result = {
       rowCount: rows.length,
-      paginationTop,
+      paginationBottom: paginationRect.bottom,
+      headingTop: headingRect.top,
+      headingBottom: headingRect.bottom,
+      firstRowTop,
       lastRowBottom,
-      fullyVisible: rows.every((row) => row.getBoundingClientRect().bottom <= paginationTop)
+      inHeading: paginationRect.top >= headingRect.top && paginationRect.bottom <= headingRect.bottom,
+      aboveRows: paginationRect.bottom <= firstRowTop,
+      fullyVisible: rows.every((row) => row.getBoundingClientRect().bottom <= list.getBoundingClientRect().bottom)
     };
     clones.forEach((clone) => clone.remove());
     pagination.hidden = wasHidden;
@@ -675,8 +683,8 @@ try {
   })()`);
   assert.equal(paginationFit.rowCount, 4, "Popup pagination probe did not render four rows");
   assert.ok(
-    paginationFit.fullyVisible,
-    `Last tab row overlaps pagination (${paginationFit.lastRowBottom} > ${paginationFit.paginationTop})`
+    paginationFit.inHeading && paginationFit.aboveRows && paginationFit.fullyVisible,
+    `Tab pagination is mispositioned (${JSON.stringify(paginationFit)})`
   );
   const detailGeometry = await evaluateExtensionPage(devToolsPort, `(() => {
     document.querySelector(".tab-copy").click();

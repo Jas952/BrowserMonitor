@@ -2,6 +2,7 @@ const $ = (selector) => document.querySelector(selector);
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const FEEDBACK_RECIPIENT_EMAIL = "darktmonth@gmail.com";
+const FEEDBACK_ENDPOINT_URL = "https://browser-monitor-feedback.darktmonth.workers.dev/feedback";
 const MAX_OUTBOX_BYTES = 6 * 1024 * 1024;
 let language = "en";
 let attachment = null;
@@ -19,20 +20,20 @@ const reportedTitle = String(query.get("title") ?? "").trim().slice(0, 300);
 const COPY = {
   en: {
     title:"Send feedback",subtitle:"Suggest a tool or report a problem",feature:"New tool",bug:"Problem",site:"Site filters",email:"Your email",
-    message:"Describe your request",attachment:"Screenshot",attachmentDetail:"PNG, JPEG or WebP up to 2 MB. It stays local until you attach it to the email.",
-    choose:"Choose image",remove:"Remove attachment",note:"Sending opens a pre-filled email. Nothing is sent silently; you review and send it in your mail app.",
-    send:"Continue to send",required:"Enter a valid email and describe the request.",imageError:"Choose a PNG, JPEG or WebP image up to 2 MB.",
-    prepared:"Email prepared. Review it in your mail app, attach the selected screenshot if needed, then send.",featureTitle:"Tool request",bugTitle:"Bug report",siteTitle:"Site filter report",
-    emailNote:"This email is used only so the developer can reply to you.",
+    message:"Describe your request",attachment:"Screenshot",attachmentDetail:"PNG, JPEG or WebP up to 2 MB. It is sent only with this request.",
+    choose:"Choose image",remove:"Remove attachment",note:"Sending delivers this request directly to the developer email through the Browser Monitor feedback endpoint.",
+    send:"Send request",required:"Enter a valid email and describe the request.",imageError:"Choose a PNG, JPEG or WebP image up to 2 MB.",
+    prepared:"Request sent. The developer can reply to the email you provided.",endpointMissing:"Feedback endpoint is not configured yet.",sendError:"Could not send the request. Try again later.",featureTitle:"Tool request",bugTitle:"Bug report",siteTitle:"Site filter report",
+    emailNote:"This email is sent with the request only so the developer can reply to you.",
     siteTemplate:(url, title) => `Site: ${url}\nPage title: ${title || "Not available"}\n\nWhat is not working:\n`
   },
   ru: {
     title:"Отправить запрос",subtitle:"Предложить инструмент или сообщить об ошибке",feature:"Новый инструмент",bug:"Ошибка",site:"Фильтры сайта",email:"Ваша почта",
-    message:"Опишите запрос",attachment:"Скриншот",attachmentDetail:"PNG, JPEG или WebP до 2 МБ. Файл остаётся локально, пока вы не прикрепите его к письму.",
-    choose:"Выбрать изображение",remove:"Удалить вложение",note:"Отправка откроет заполненное письмо. Ничего не отправляется скрытно: вы проверяете и отправляете письмо в почтовом приложении.",
-    send:"Перейти к отправке",required:"Укажите корректную почту и опишите запрос.",imageError:"Выберите PNG, JPEG или WebP до 2 МБ.",
-    prepared:"Письмо подготовлено. Проверьте его в почтовом приложении, при необходимости прикрепите скриншот и отправьте.",featureTitle:"Запрос инструмента",bugTitle:"Сообщение об ошибке",siteTitle:"Проблема фильтров сайта",
-    emailNote:"Почта используется только для ответа разработчика.",
+    message:"Опишите запрос",attachment:"Скриншот",attachmentDetail:"PNG, JPEG или WebP до 2 МБ. Файл отправляется только вместе с этим запросом.",
+    choose:"Выбрать изображение",remove:"Удалить вложение",note:"Отправка передаст запрос напрямую на почту разработчика через feedback endpoint Browser Monitor.",
+    send:"Отправить запрос",required:"Укажите корректную почту и опишите запрос.",imageError:"Выберите PNG, JPEG или WebP до 2 МБ.",
+    prepared:"Запрос отправлен. Разработчик сможет ответить на указанную почту.",endpointMissing:"Feedback endpoint пока не настроен.",sendError:"Не удалось отправить запрос. Попробуйте позже.",featureTitle:"Запрос инструмента",bugTitle:"Сообщение об ошибке",siteTitle:"Проблема фильтров сайта",
+    emailNote:"Почта отправляется вместе с запросом только для ответа разработчика.",
     siteTemplate:(url, title) => `Сайт: ${url}\nНазвание страницы: ${title || "Недоступно"}\n\nЧто не работает:\n`
   }
 };
@@ -73,6 +74,24 @@ function compactOutbox(entries) {
     bytes += nextBytes;
   }
   return result;
+}
+
+async function sendFeedbackRequest(payload) {
+  if (!FEEDBACK_ENDPOINT_URL) {
+    throw new Error("feedback-endpoint-missing");
+  }
+  const response = await fetch(FEEDBACK_ENDPOINT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.error || "feedback-send-failed");
+    error.status = response.status;
+    throw error;
+  }
+  return data;
 }
 
 async function siteDiagnostics() {
@@ -127,27 +146,23 @@ $("#send-feedback").addEventListener("click", async () => {
   }
   $("#send-feedback").disabled = true;
   const diagnostics = type === "site" ? await siteDiagnostics() : null;
-  const request = { id: crypto.randomUUID(), type, email, message, reportedURL, diagnostics, attachment, createdAt: new Date().toISOString(), status: "prepared" };
+  const request = { id: crypto.randomUUID(), type, email, message, reportedURL, diagnostics, attachment, version: chrome.runtime.getManifest().version, createdAt: new Date().toISOString(), status: "pending" };
   const { feedbackOutbox = [] } = await chrome.storage.local.get({ feedbackOutbox: [] });
   await chrome.storage.local.set({ feedbackEmail: email, feedbackOutbox: compactOutbox([request, ...feedbackOutbox]) });
-  const hostname = reportedURL ? new URL(reportedURL).hostname : "";
-  const titlePrefix = type === "site" ? c().siteTitle : type === "bug" ? c().bugTitle : c().featureTitle;
-  const title = `${titlePrefix}: ${type === "site" ? hostname : message.split("\n")[0].slice(0, 80)}`;
-  const diagnosticsLines = diagnostics ? [
-    "", "Site diagnostics:",
-    `URL: ${reportedURL}`,
-    `Protection enabled: ${diagnostics.protectionEnabled}`,
-    `Allowlisted: ${diagnostics.allowlisted}`,
-    `Temporarily paused: ${diagnostics.temporarilyPaused}`,
-    ...Object.entries(diagnostics.filters).map(([key, enabled]) => `${key}: ${enabled}`)
-  ] : [];
-  const body = [`Reply email: ${email}`, "", message, ...diagnosticsLines, "", attachment ? `Screenshot selected locally: ${attachment.name} (attach it to this email)` : "Screenshot: none", "", `Browser Monitor ${chrome.runtime.getManifest().version}`].join("\n");
-  const url = `mailto:${encodeURIComponent(FEEDBACK_RECIPIENT_EMAIL)}?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
-  await chrome.tabs.create({ url });
-  request.status = "opened";
-  await chrome.storage.local.set({ feedbackOutbox: compactOutbox([request, ...feedbackOutbox]) });
-  setStatus(c().prepared, "success");
-  $("#send-feedback").disabled = false;
+  try {
+    const result = await sendFeedbackRequest(request);
+    request.status = "sent";
+    request.providerId = result.id || null;
+    await chrome.storage.local.set({ feedbackOutbox: compactOutbox([request, ...feedbackOutbox]) });
+    setStatus(c().prepared, "success");
+  } catch (error) {
+    request.status = "failed";
+    request.error = error.message;
+    await chrome.storage.local.set({ feedbackOutbox: compactOutbox([request, ...feedbackOutbox]) });
+    setStatus(error.message === "feedback-endpoint-missing" ? c().endpointMissing : c().sendError, "error");
+  } finally {
+    $("#send-feedback").disabled = false;
+  }
 });
 
 const { uiPreferences, feedbackEmail } = await chrome.storage.local.get({ uiPreferences: { language: null, theme: "system" }, feedbackEmail: "" });

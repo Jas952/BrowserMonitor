@@ -14,7 +14,8 @@ Browser Monitor is a Chrome Manifest V3 extension without a backend or bundler. 
 | `popup.*` | Current-site status and quick tools. |
 | `options.*` | Settings and optional permission requests. |
 | `statistics*`, `activity*` | Local blocking and activity reports. |
-| `link-warning.*`, `feedback.*` | Link warning and explicit email feedback preparation. |
+| `link-warning.*`, `feedback.*` | Link warning and explicit feedback submission. |
+| `cloudflare/feedback-worker/` | Optional Cloudflare Worker that receives feedback requests and sends them through the configured email provider. |
 
 ## Data
 
@@ -31,6 +32,7 @@ Browser Monitor is a Chrome Manifest V3 extension without a backend or bundler. 
 - Required permissions are declared in the manifest. `browsingData`, `cookies`, `downloads`, `history`, and clipboard capabilities are requested only when needed.
 - Content scripts are event-driven; hidden tabs must not receive continuous full DOM scans.
 - Network filtering is limited by Chrome DNR limits.
-- User data and decisions remain local except for an explicit email handoff or a user-enabled external feature.
+- User data and decisions remain local except for an explicit feedback submission or a user-enabled external feature.
+- The feedback Worker stores no database records. Email provider credentials are Cloudflare secrets and must not be shipped in the extension.
 
 See [[Features]] for behavior and [[Product]] for product boundaries.

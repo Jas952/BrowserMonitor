@@ -100,6 +100,7 @@ let toolDrag = null;
 let suppressToolClick = false;
 let toolSnapTimer = null;
 let toolPageAnimationUntil = 0;
+let toolScrollAnimationFrame = 0;
 const t = (key, values) => translate(language, key, values);
 const performanceTextKeys = new Map([
   ["Long main-thread blocks", "reasonLongBlocks"],
@@ -137,6 +138,47 @@ function formatMediaTime(seconds) {
 
 function hostname(url) {
   try { return new URL(url).hostname; } catch { return t("currentSite"); }
+}
+
+async function ensureDetachedPopupWindow(options = {}) {
+  const { focused = false } = options;
+  const popupURL = chrome.runtime.getURL("popup.html");
+  const existingTabs = await chrome.tabs.query({ url: popupURL }).catch(() => []);
+  const existing = existingTabs.find((tab) => typeof tab.windowId === "number");
+  if (existing) {
+    if (focused) await chrome.windows.update(existing.windowId, { focused: true }).catch(() => null);
+    return existing.windowId;
+  }
+  const window = await chrome.windows.create({
+    url: popupURL,
+    type: "popup",
+    width: 420,
+    height: 600,
+    focused
+  });
+  return window.id;
+}
+
+function refocusDetachedPopupWhenClosed(childWindowId, popupWindowId) {
+  if (typeof childWindowId !== "number" || typeof popupWindowId !== "number") return;
+  const onRemoved = async (closedWindowId) => {
+    if (closedWindowId !== childWindowId) return;
+    chrome.windows.onRemoved.removeListener(onRemoved);
+    const popupWindow = await chrome.windows.get(popupWindowId).catch(() => null);
+    if (popupWindow) await chrome.windows.update(popupWindowId, { focused: true }).catch(() => null);
+  };
+  chrome.windows.onRemoved.addListener(onRemoved);
+}
+
+async function openExtensionWindow(url, options) {
+  const popupWindowId = await ensureDetachedPopupWindow().catch(() => null);
+  try {
+    const childWindow = await chrome.windows.create({ url, type: "popup", ...options });
+    refocusDetachedPopupWhenClosed(childWindow?.id, popupWindowId);
+    return childWindow;
+  } catch {
+    return chrome.tabs.create({ url });
+  }
 }
 
 function closePanels() {
@@ -235,9 +277,31 @@ function scrollToToolPage(page, behavior = "smooth") {
   const targets = toolPageTargets();
   const target = targets[Math.max(0, Math.min(page, targets.length - 1))] ?? 0;
   clearTimeout(toolSnapTimer);
-  toolPageAnimationUntil = behavior === "smooth" ? Date.now() + 260 : 0;
-  toolStrip.scrollTo({ left: target, behavior });
-  setTimeout(updateToolNavigation, behavior === "smooth" ? 240 : 0);
+  cancelAnimationFrame(toolScrollAnimationFrame);
+  if (behavior !== "smooth") {
+    toolPageAnimationUntil = 0;
+    toolStrip.scrollTo({ left: target, behavior });
+    updateToolNavigation();
+    return;
+  }
+  const start = toolStrip.scrollLeft;
+  const delta = target - start;
+  const duration = 360;
+  const started = performance.now();
+  toolPageAnimationUntil = Date.now() + duration + 80;
+  const step = (now) => {
+    const progress = Math.min(1, (now - started) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    toolStrip.scrollLeft = start + delta * eased;
+    if (progress < 1) {
+      toolScrollAnimationFrame = requestAnimationFrame(step);
+    } else {
+      toolScrollAnimationFrame = 0;
+      toolStrip.scrollLeft = target;
+      updateToolNavigation();
+    }
+  };
+  toolScrollAnimationFrame = requestAnimationFrame(step);
 }
 
 function updateToolLayout() {
@@ -491,6 +555,7 @@ function renderSnapshot(snapshot) {
 
   list.replaceChildren();
   moreTabs.hidden = true;
+  tabsCount.hidden = false;
   if (snapshot.tabs.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty";
@@ -549,6 +614,7 @@ function renderSnapshot(snapshot) {
   }
 
   if (pageCount > 1) {
+    tabsCount.hidden = true;
     moreTabs.hidden = false;
     previousTabs.disabled = tabPage === 0;
     nextTabs.disabled = tabPage === pageCount - 1;
@@ -913,16 +979,10 @@ privacyReceiptButton.addEventListener("click", async () => {
 
 receiptDetailsButton.addEventListener("click", async () => {
   if (!activeTab) return;
-  try {
-    await chrome.windows.create({
-      url: chrome.runtime.getURL(`receipt-details.html?tabId=${activeTab.id}`),
-      type: "popup",
-      width: 580,
-      height: 600
-    });
-  } catch {
-    await chrome.tabs.create({ url: chrome.runtime.getURL(`receipt-details.html?tabId=${activeTab.id}`) });
-  }
+  await openExtensionWindow(chrome.runtime.getURL(`receipt-details.html?tabId=${activeTab.id}`), {
+    width: 580,
+    height: 600
+  });
 });
 
 pipButton.addEventListener("click", async () => {
@@ -1006,31 +1066,22 @@ exportAllCookies.addEventListener("click", () => {
 });
 
 refreshButton.addEventListener("click", refresh);
-settingsButton.addEventListener("click", () => chrome.runtime.openOptionsPage());
+settingsButton.addEventListener("click", async () => {
+  await ensureDetachedPopupWindow().catch(() => null);
+  await chrome.runtime.openOptionsPage();
+});
 async function openActivityWindow() {
-  try {
-    await chrome.windows.create({
-      url: chrome.runtime.getURL("activity.html"),
-      type: "popup",
-      width: 1120,
-      height: 760
-    });
-  } catch {
-    await chrome.tabs.create({ url: chrome.runtime.getURL("activity.html") });
-  }
+  await openExtensionWindow(chrome.runtime.getURL("activity.html"), {
+    width: 1120,
+    height: 760
+  });
 }
 headerActivityButton.addEventListener("click", openActivityWindow);
 async function openStatisticsWindow() {
-  try {
-    await chrome.windows.create({
-      url: chrome.runtime.getURL("statistics.html"),
-      type: "popup",
-      width: 860,
-      height: 680
-    });
-  } catch {
-    await chrome.tabs.create({ url: chrome.runtime.getURL("statistics.html") });
-  }
+  await openExtensionWindow(chrome.runtime.getURL("statistics.html"), {
+    width: 860,
+    height: 680
+  });
 }
 
 statisticsButton.addEventListener("click", openStatisticsWindow);
@@ -1071,11 +1122,7 @@ feedbackButton.addEventListener("click", async () => {
     : new URLSearchParams();
   const query = params.toString();
   const feedbackURL = chrome.runtime.getURL(`feedback.html${query ? `?${query}` : ""}`);
-  try {
-    await chrome.windows.create({ url: feedbackURL, type: "popup", width: 580, height: 740 });
-  } catch {
-    await chrome.tabs.create({ url: feedbackURL });
-  }
+  await openExtensionWindow(feedbackURL, { width: 580, height: 740 });
 });
 
 async function bootstrap() {

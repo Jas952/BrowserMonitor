@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "browser-monitor-feedback",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-28",
+  "workers_dev": true,
+  "vars": {
+    "TO_EMAIL": "darktmonth@gmail.com",
+    "FROM_EMAIL": "Browser Monitor <onboarding@resend.dev>",
+    "ALLOWED_EXTENSION_IDS": ""
+  },
+  "observability": {
+    "enabled": true
+  }
+}

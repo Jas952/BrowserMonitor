@@ -8,7 +8,7 @@ test("manifest is valid Manifest V3 JSON", () => {
 
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.name, "Browser Monitor");
-  assert.equal(manifest.version, "1.1.0");
+  assert.equal(manifest.version, "1.1.1");
   assert.ok(!("key" in manifest));
   assert.equal(manifest.background.type, "module");
   assert.ok(!manifest.permissions.includes("nativeMessaging"));
@@ -126,6 +126,11 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(popupJS, /toolStrip\.addEventListener\("wheel"/);
   assert.match(popupJS, /const TOOLS_PER_PAGE = 4/);
   assert.match(popupJS, /scrollToToolPage/);
+  assert.match(popupJS, /ensureDetachedPopupWindow/);
+  assert.match(popupJS, /openExtensionWindow/);
+  assert.match(popupJS, /refocusDetachedPopupWhenClosed/);
+  assert.match(popupJS, /chrome\.windows\.onRemoved\.addListener/);
+  assert.match(popupJS, /requestAnimationFrame\(step\)/);
   assert.match(popupJS, /previousTools\.addEventListener\("click"/);
   assert.match(popupJS, /nextTools\.addEventListener\("click"/);
   assert.match(popupJS, /animateToolShift/);
@@ -138,12 +143,16 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.doesNotMatch(popupCSS, /main\s*\{[^}]*overflow:\s*auto/s);
   assert.match(popupCSS, /#site-control-action\s*\{[^}]*width:\s*78px/s);
   assert.match(popupCSS, /\.tool-strip\s*\{[^}]*overflow-x:\s*auto[^}]*scrollbar-width:\s*none/s);
+  assert.match(popupCSS, /\.utility-section\s*\{[^}]*padding:\s*9px 16px/s);
+  assert.match(popupCSS, /\.tool-strip\s*\{[^}]*min-height:\s*40px[^}]*padding:\s*4px 0/s);
   assert.match(popupCSS, /\.tool-button\s*\{[^}]*flex:\s*0 0 calc\(\(100% - 15px\) \/ 4\)/s);
   assert.match(popupCSS, /\.tool-button:nth-of-type\(4n \+ 1\)/);
   assert.match(popupCSS, /\.tool-carousel:hover \.tool-nav/);
   assert.match(popupCSS, /\.tool-nav\s*\{[^}]*border:\s*0[^}]*background:\s*transparent/s);
   assert.match(popupCSS, /\.tool-nav svg\s*\{[^}]*stroke-width:\s*1\.35/s);
   assert.match(popupCSS, /\.tool-button\.dragging\s*\{[^}]*scale\(1\.06\)/s);
+  assert.match(popupCSS, /\.site-actions:hover[^}]*background:\s*var\(--panel\)/s);
+  assert.match(popupCSS, /\.tool-strip\.reordering \.tool-button:not\(\.dragging\)\s*\{[^}]*260ms/s);
   assert.doesNotMatch(popupHTML, /id="utilities-title"/);
   assert.match(popupHTML, /id="previous-tools"[^>]*>\s*<svg/s);
   assert.match(popupHTML, /id="next-tools"[^>]*>\s*<svg/s);
@@ -316,11 +325,14 @@ test("activity and feedback surfaces are bilingual and privacy explicit", () => 
   assert.match(feedbackHTML, /value="site"/);
   assert.match(feedbackHTML, /accept="image\/png,image\/jpeg,image\/webp"/);
   assert.match(feedback, /FEEDBACK_RECIPIENT_EMAIL/);
-  assert.match(feedback, /mailto:/);
+  assert.match(feedback, /FEEDBACK_ENDPOINT_URL/);
+  assert.match(feedback, /sendFeedbackRequest/);
+  assert.match(feedback, /fetch\(FEEDBACK_ENDPOINT_URL/);
+  assert.doesNotMatch(feedback, /mailto:/);
   assert.doesNotMatch(feedback, /github\.com\/Jas952\/BrowserMonitor\/issues\/new/);
   assert.match(feedback, /MAX_OUTBOX_BYTES = 6 \* 1024 \* 1024/);
-  assert.match(feedback, /Nothing is sent silently/);
-  assert.match(feedback, /mail app/);
+  assert.match(feedback, /feedback endpoint/);
+  assert.match(feedback, /Request sent/);
   assert.match(feedback, /kind: "getContentBlockingState"/);
   assert.match(feedback, /kind: "getBrowserProtectionSettings"/);
   assert.match(feedback, /Site filter report/);
