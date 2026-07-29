@@ -17,7 +17,7 @@ Only implemented user-facing capabilities are listed here.
 | Site Activity | Tab activity explanation and a map of recent cross-domain redirects. |
 | Tab tools | Duplicate-tab detection and closing, plus a configurable popup tool order. |
 | Feedback | Direct feedback request form via a configured Cloudflare endpoint after explicit user action. |
-| Interface | Popup, Settings, Statistics, Activity, and warning pages in English and Russian. Settings and reports reuse browser tabs instead of detached windows. |
+| Interface | Popup, Settings, Statistics, Activity, and warning pages in English and Russian. Statistics and Activity reuse one dedicated window each; other extension pages reuse browser tabs. |
 
 ## Main limitations
 

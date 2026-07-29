@@ -22,6 +22,6 @@ Current release: 1.1.2.
 - Activity history stores domains and aggregates, not page content.
 - External data is used only by explicitly enabled features such as SponsorBlock or when the user sends a feedback request.
 - Feedback delivery uses a Cloudflare Worker endpoint when configured. The request includes the reply email, message, optional screenshot, and relevant diagnostics shown by the form.
-- Settings and report screens open as reusable browser tabs. Browser Monitor does not create detached utility windows.
+- Statistics and Activity each use one reusable utility window. Settings, feedback, and receipt details reuse browser tabs, and Browser Monitor never creates a detached copy of its main popup.
 
 Implemented capabilities are listed in [[Features]], implementation structure in [[Architecture]], and future ideas in [[Opportunities]].

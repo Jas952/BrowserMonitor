@@ -159,6 +159,34 @@ async function openExtensionTab(url) {
   return tab;
 }
 
+async function openExtensionWindow(url, options) {
+  const target = new URL(url);
+  const tabs = await chrome.tabs.query({});
+  const matches = tabs.filter((tab) => {
+    try {
+      const current = new URL(tab.url);
+      return current.origin === target.origin && current.pathname === target.pathname;
+    } catch {
+      return false;
+    }
+  });
+  const existing = matches[0];
+  const duplicateIDs = matches.slice(1).map((tab) => tab.id).filter(Number.isInteger);
+  if (duplicateIDs.length) await chrome.tabs.remove(duplicateIDs).catch(() => null);
+  if (!existing?.id) {
+    return chrome.windows.create({ url, type: "popup", focused: true, ...options });
+  }
+  await chrome.tabs.update(existing.id, { url, active: true });
+  const owner = await chrome.windows.get(existing.windowId).catch(() => null);
+  if (owner?.type !== "popup") {
+    return chrome.windows.create({ tabId: existing.id, type: "popup", focused: true, ...options });
+  }
+  if (owner.state === "minimized") {
+    await chrome.windows.update(existing.windowId, { state: "normal" }).catch(() => null);
+  }
+  return chrome.windows.update(existing.windowId, { focused: true });
+}
+
 function closePanels() {
   tabDetailPanel.hidden = true;
   cookiesPanel.hidden = true;
@@ -1045,11 +1073,17 @@ settingsButton.addEventListener("click", async () => {
   await chrome.runtime.openOptionsPage();
 });
 async function openActivityPage() {
-  await openExtensionTab(chrome.runtime.getURL("activity.html"));
+  await openExtensionWindow(chrome.runtime.getURL("activity.html"), {
+    width: 1120,
+    height: 760
+  });
 }
 headerActivityButton.addEventListener("click", openActivityPage);
 async function openStatisticsPage() {
-  await openExtensionTab(chrome.runtime.getURL("statistics.html"));
+  await openExtensionWindow(chrome.runtime.getURL("statistics.html"), {
+    width: 860,
+    height: 680
+  });
 }
 
 statisticsButton.addEventListener("click", openStatisticsPage);

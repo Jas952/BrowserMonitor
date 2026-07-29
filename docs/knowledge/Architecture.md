@@ -32,7 +32,7 @@ Browser Monitor is a Chrome Manifest V3 extension without a backend or bundler. 
 - Required permissions are declared in the manifest. `browsingData`, `cookies`, `downloads`, `history`, and clipboard capabilities are requested only when needed.
 - Content scripts are event-driven; hidden tabs must not receive continuous full DOM scans.
 - Network filtering is limited by Chrome DNR limits.
-- Extension reports use one reusable browser tab per page. Chrome's extension window API cannot provide a reliable always-on-top utility window.
+- Statistics and Activity each reuse one dedicated popup window. Reopening either surface focuses its existing window and removes older duplicates; Chrome's extension API cannot force it to stay always on top. Other extension pages reuse browser tabs.
 - User data and decisions remain local except for an explicit feedback submission or a user-enabled external feature.
 - The feedback Worker stores no database records. Email provider credentials are Cloudflare secrets and must not be shipped in the extension.
 
