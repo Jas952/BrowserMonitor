@@ -10,7 +10,7 @@ Concise technical decisions that affect Browser Monitor behavior.
 - Tool paging uses a controlled `requestAnimationFrame` animation instead of native smooth scrolling, so page movement stays visually consistent in the popup.
 - The main switch state is applied before removing the `preload` class. Initial markup matches the normal enabled state, preventing a false off-to-on animation when the popup opens.
 - Only the list scrolls in the duplicate-tabs panel; the primary action remains fixed at the bottom.
-- Statistics, Activity, feedback, and receipt detail surfaces follow the extension report tab policy in [[Architecture]].
+- Statistics and Activity each reuse one dedicated popup window without creating a detached copy of the main extension popup. Feedback and receipt details reuse browser tabs.
 - Feedback sends an explicit form submission to a configured Cloudflare Worker endpoint instead of GitHub Issues or `mailto:`. The extension keeps a bounded local outbox copy, and provider credentials stay only in Cloudflare secrets.
 
 Related notes: [[Architecture]], [[Features]], [[Product]].
