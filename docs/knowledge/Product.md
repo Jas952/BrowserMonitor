@@ -2,6 +2,8 @@
 
 Browser Monitor is a local-first Chrome extension for safer browsing, reducing page noise, and analyzing browser activity locally.
 
+Current release: 1.1.2.
+
 ## Principles
 
 - Core protection works without an account or backend.
@@ -20,5 +22,6 @@ Browser Monitor is a local-first Chrome extension for safer browsing, reducing p
 - Activity history stores domains and aggregates, not page content.
 - External data is used only by explicitly enabled features such as SponsorBlock or when the user sends a feedback request.
 - Feedback delivery uses a Cloudflare Worker endpoint when configured. The request includes the reply email, message, optional screenshot, and relevant diagnostics shown by the form.
+- Settings and report screens open as reusable browser tabs. Browser Monitor does not create detached utility windows.
 
 Implemented capabilities are listed in [[Features]], implementation structure in [[Architecture]], and future ideas in [[Opportunities]].

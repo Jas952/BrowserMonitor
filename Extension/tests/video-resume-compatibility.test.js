@@ -58,3 +58,11 @@ test("tracking and verification query parameters do not alter identity", () => {
   const second = guard.mediaIdentitySource("api.example", "Example Show", "/embed/movie/332", "?episode=1&token=private");
   assert.equal(first, second);
 });
+
+test("YouTube video query values produce separate local identities", () => {
+  const first = guard.mediaIdentitySource("www.youtube.com", "Stale YouTube title", "/watch", "?v=video-one&utm_source=mail");
+  const second = guard.mediaIdentitySource("www.youtube.com", "Stale YouTube title", "/watch", "?v=video-two");
+  assert.notEqual(first, second);
+  assert.match(first, /v=video one/);
+  assert.doesNotMatch(first, /utm_source|mail/);
+});

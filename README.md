@@ -7,7 +7,7 @@
 <p align="center">
   <img alt="Chrome extension" src="https://img.shields.io/badge/Chrome-Extension-4285F4?style=flat-square&logo=googlechrome&logoColor=white" />
   <img alt="Manifest V3" src="https://img.shields.io/badge/Manifest-V3-607D8B?style=flat-square" />
-  <img alt="Version 1.1.0" src="https://img.shields.io/badge/version-1.1.0-789C8F?style=flat-square" />
+  <img alt="Version 1.1.2" src="https://img.shields.io/badge/version-1.1.2-789C8F?style=flat-square" />
   <img alt="Local-first" src="https://img.shields.io/badge/Local--first-No_analytics-3D7564?style=flat-square" />
   <img alt="Codex helped with development" src="https://img.shields.io/badge/Helped_by-Codex-111827?style=flat-square&logo=openai&logoColor=white" />
 </p>
@@ -45,7 +45,7 @@ Browser Monitor is a local-first Chrome extension that combines content protecti
 
 ## Install
 
-1. Download `browser-monitor-1.1.0.zip` from the [latest release](https://github.com/Jas952/BrowserMonitor/releases/latest) and extract it.
+1. Download `browser-monitor-1.1.2.zip` from the [latest release](https://github.com/Jas952/BrowserMonitor/releases/latest) and extract it.
 2. Open `chrome://extensions` and enable **Developer mode**.
 3. Select **Load unpacked** and choose the extracted folder containing `manifest.json`.
 4. Pin Browser Monitor to the Chrome toolbar. When using a source checkout instead, choose its `Extension` folder.

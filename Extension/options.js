@@ -459,10 +459,23 @@ document.querySelector("#reset-settings").addEventListener("click", async () => 
 });
 
 document.querySelector("#open-feedback").addEventListener("click", async () => {
-  try {
-    await chrome.windows.create({ url: chrome.runtime.getURL("feedback.html"), type: "popup", width: 580, height: 700 });
-  } catch {
-    await chrome.tabs.create({ url: chrome.runtime.getURL("feedback.html") });
+  const url = chrome.runtime.getURL("feedback.html");
+  const existing = (await chrome.tabs.query({})).find((tab) => {
+    try {
+      const current = new URL(tab.url);
+      const target = new URL(url);
+      return current.origin === target.origin && current.pathname === target.pathname;
+    } catch {
+      return false;
+    }
+  });
+  if (!existing?.id) {
+    await chrome.tabs.create({ url, active: true });
+    return;
+  }
+  await chrome.tabs.update(existing.id, { url, active: true });
+  if (typeof existing.windowId === "number") {
+    await chrome.windows.update(existing.windowId, { focused: true }).catch(() => null);
   }
 });
 
