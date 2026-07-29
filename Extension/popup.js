@@ -115,6 +115,7 @@ const performanceTextKeys = new Map([
   ["Close this tab if you do not need it right now.", "recommendationCritical"]
 ]);
 const localizePerformanceText = (value) => performanceTextKeys.has(value) ? t(performanceTextKeys.get(value)) : value;
+const extensionWindowOpens = new Map();
 
 function formatNumber(value) {
   return new Intl.NumberFormat(language).format(value ?? 0);
@@ -159,7 +160,7 @@ async function openExtensionTab(url) {
   return tab;
 }
 
-async function openExtensionWindow(url, options) {
+async function openDedicatedExtensionWindow(url, options) {
   const target = new URL(url);
   const tabs = await chrome.tabs.query({});
   const matches = tabs.filter((tab) => {
@@ -185,6 +186,19 @@ async function openExtensionWindow(url, options) {
     await chrome.windows.update(existing.windowId, { state: "normal" }).catch(() => null);
   }
   return chrome.windows.update(existing.windowId, { focused: true });
+}
+
+async function openExtensionWindow(url, options) {
+  const target = new URL(url);
+  if (target.pathname.endsWith("/popup.html")) return openExtensionTab(url);
+  const key = `${target.origin}${target.pathname}`;
+  const existingOpen = extensionWindowOpens.get(key);
+  if (existingOpen) return existingOpen;
+  const open = openDedicatedExtensionWindow(url, options).finally(() => {
+    extensionWindowOpens.delete(key);
+  });
+  extensionWindowOpens.set(key, open);
+  return open;
 }
 
 function closePanels() {

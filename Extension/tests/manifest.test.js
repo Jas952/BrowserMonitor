@@ -128,10 +128,14 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(popupJS, /scrollToToolPage/);
   assert.match(popupJS, /openExtensionTab/);
   assert.match(popupJS, /openExtensionWindow/);
+  assert.match(popupJS, /extensionWindowOpens = new Map\(\)/);
+  assert.match(popupJS, /extensionWindowOpens\.get\(key\)/);
+  assert.match(popupJS, /finally\(\(\) =>/);
   assert.match(popupJS, /current\.pathname === target\.pathname/);
   assert.match(popupJS, /matches\.slice\(1\)/);
   assert.match(popupJS, /tabId: existing\.id/);
   assert.match(popupJS, /owner\?\.type !== "popup"/);
+  assert.match(popupJS, /target\.pathname\.endsWith\("\/popup\.html"\)/);
   assert.doesNotMatch(popupJS, /ensureDetachedPopupWindow|refocusDetachedPopupWhenClosed/);
   assert.doesNotMatch(popupJS, /getURL\("popup\.html"\)/);
   assert.match(popupJS, /requestAnimationFrame\(step\)/);
