@@ -8,7 +8,7 @@ test("manifest is valid Manifest V3 JSON", () => {
 
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.name, "Browser Monitor");
-  assert.equal(manifest.version, "1.1.1");
+  assert.equal(manifest.version, "1.1.2");
   assert.ok(!("key" in manifest));
   assert.equal(manifest.background.type, "module");
   assert.ok(!manifest.permissions.includes("nativeMessaging"));
@@ -126,10 +126,10 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(popupJS, /toolStrip\.addEventListener\("wheel"/);
   assert.match(popupJS, /const TOOLS_PER_PAGE = 4/);
   assert.match(popupJS, /scrollToToolPage/);
-  assert.match(popupJS, /ensureDetachedPopupWindow/);
-  assert.match(popupJS, /openExtensionWindow/);
-  assert.match(popupJS, /refocusDetachedPopupWhenClosed/);
-  assert.match(popupJS, /chrome\.windows\.onRemoved\.addListener/);
+  assert.match(popupJS, /openExtensionTab/);
+  assert.match(popupJS, /current\.pathname === target\.pathname/);
+  assert.doesNotMatch(popupJS, /ensureDetachedPopupWindow|openExtensionWindow|refocusDetachedPopupWhenClosed/);
+  assert.doesNotMatch(popupJS, /chrome\.windows\.create/);
   assert.match(popupJS, /requestAnimationFrame\(step\)/);
   assert.match(popupJS, /previousTools\.addEventListener\("click"/);
   assert.match(popupJS, /nextTools\.addEventListener\("click"/);
@@ -177,6 +177,8 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(contentScript, /selectorForCurrentSite/);
   assert.match(contentScript, /handleCryptoCopy/);
   assert.match(contentScript, /initializeContinueWatching/);
+  assert.match(contentScript, /h1\.ytd-watch-metadata yt-formatted-string/);
+  assert.match(contentScript, /yt-navigate-finish/);
   assert.match(contentScript, /configureSearchProtection/);
   assert.match(contentScript, /contextMenuTarget/);
   assert.match(contentScript, /browser-monitor-activation-overlay/);
@@ -255,6 +257,7 @@ test("options page exposes separate settings panels without reports", () => {
   assert.match(script, /aria-controls/);
   assert.match(script, /enhanceSettingControls/);
   assert.match(script, /aria-labelledby/);
+  assert.doesNotMatch(script, /chrome\.windows\.create/);
   assert.match(script, /aria-describedby/);
   assert.match(script, /role", "switch"/);
   assert.match(script, /linkSafetyAllowedDomains/);
@@ -275,7 +278,7 @@ test("options page exposes separate settings panels without reports", () => {
   assert.doesNotMatch(serviceWorker, /connectNative|nativePort|nativeHostConnected/);
 });
 
-test("blocking statistics use a dedicated localized window", () => {
+test("blocking statistics use a dedicated localized page", () => {
   const html = readFileSync(new URL("../statistics.html", import.meta.url), "utf8");
   const css = readFileSync(new URL("../statistics.css", import.meta.url), "utf8");
   const script = readFileSync(new URL("../statistics-page.js", import.meta.url), "utf8");

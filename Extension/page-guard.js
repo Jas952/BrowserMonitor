@@ -148,7 +148,7 @@
       .trim()
       .slice(0, 160);
     const allowedKeys = new Set([
-      "id", "video", "movie", "film", "serial", "show",
+      "id", "v", "video", "movie", "film", "serial", "show",
       "season", "s", "episode", "ep", "e"
     ]);
     const selected = [];

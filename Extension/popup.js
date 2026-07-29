@@ -140,45 +140,23 @@ function hostname(url) {
   try { return new URL(url).hostname; } catch { return t("currentSite"); }
 }
 
-async function ensureDetachedPopupWindow(options = {}) {
-  const { focused = false } = options;
-  const popupURL = chrome.runtime.getURL("popup.html");
-  const existingTabs = await chrome.tabs.query({ url: popupURL }).catch(() => []);
-  const existing = existingTabs.find((tab) => typeof tab.windowId === "number");
-  if (existing) {
-    if (focused) await chrome.windows.update(existing.windowId, { focused: true }).catch(() => null);
-    return existing.windowId;
-  }
-  const window = await chrome.windows.create({
-    url: popupURL,
-    type: "popup",
-    width: 420,
-    height: 600,
-    focused
+async function openExtensionTab(url) {
+  const target = new URL(url);
+  const tabs = await chrome.tabs.query({});
+  const existing = tabs.find((tab) => {
+    try {
+      const current = new URL(tab.url);
+      return current.origin === target.origin && current.pathname === target.pathname;
+    } catch {
+      return false;
+    }
   });
-  return window.id;
-}
-
-function refocusDetachedPopupWhenClosed(childWindowId, popupWindowId) {
-  if (typeof childWindowId !== "number" || typeof popupWindowId !== "number") return;
-  const onRemoved = async (closedWindowId) => {
-    if (closedWindowId !== childWindowId) return;
-    chrome.windows.onRemoved.removeListener(onRemoved);
-    const popupWindow = await chrome.windows.get(popupWindowId).catch(() => null);
-    if (popupWindow) await chrome.windows.update(popupWindowId, { focused: true }).catch(() => null);
-  };
-  chrome.windows.onRemoved.addListener(onRemoved);
-}
-
-async function openExtensionWindow(url, options) {
-  const popupWindowId = await ensureDetachedPopupWindow().catch(() => null);
-  try {
-    const childWindow = await chrome.windows.create({ url, type: "popup", ...options });
-    refocusDetachedPopupWhenClosed(childWindow?.id, popupWindowId);
-    return childWindow;
-  } catch {
-    return chrome.tabs.create({ url });
+  if (!existing?.id) return chrome.tabs.create({ url, active: true });
+  const tab = await chrome.tabs.update(existing.id, { url, active: true });
+  if (typeof existing.windowId === "number") {
+    await chrome.windows.update(existing.windowId, { focused: true }).catch(() => null);
   }
+  return tab;
 }
 
 function closePanels() {
@@ -979,10 +957,7 @@ privacyReceiptButton.addEventListener("click", async () => {
 
 receiptDetailsButton.addEventListener("click", async () => {
   if (!activeTab) return;
-  await openExtensionWindow(chrome.runtime.getURL(`receipt-details.html?tabId=${activeTab.id}`), {
-    width: 580,
-    height: 600
-  });
+  await openExtensionTab(chrome.runtime.getURL(`receipt-details.html?tabId=${activeTab.id}`));
 });
 
 pipButton.addEventListener("click", async () => {
@@ -1067,25 +1042,18 @@ exportAllCookies.addEventListener("click", () => {
 
 refreshButton.addEventListener("click", refresh);
 settingsButton.addEventListener("click", async () => {
-  await ensureDetachedPopupWindow().catch(() => null);
   await chrome.runtime.openOptionsPage();
 });
-async function openActivityWindow() {
-  await openExtensionWindow(chrome.runtime.getURL("activity.html"), {
-    width: 1120,
-    height: 760
-  });
+async function openActivityPage() {
+  await openExtensionTab(chrome.runtime.getURL("activity.html"));
 }
-headerActivityButton.addEventListener("click", openActivityWindow);
-async function openStatisticsWindow() {
-  await openExtensionWindow(chrome.runtime.getURL("statistics.html"), {
-    width: 860,
-    height: 680
-  });
+headerActivityButton.addEventListener("click", openActivityPage);
+async function openStatisticsPage() {
+  await openExtensionTab(chrome.runtime.getURL("statistics.html"));
 }
 
-statisticsButton.addEventListener("click", openStatisticsWindow);
-headerStatisticsButton.addEventListener("click", openStatisticsWindow);
+statisticsButton.addEventListener("click", openStatisticsPage);
+headerStatisticsButton.addEventListener("click", openStatisticsPage);
 watchHistoryButton.addEventListener("click", () => {
   if (watchHistoryView.hidden) void openWatchHistoryView();
   else closeWatchHistoryView();
@@ -1122,7 +1090,7 @@ feedbackButton.addEventListener("click", async () => {
     : new URLSearchParams();
   const query = params.toString();
   const feedbackURL = chrome.runtime.getURL(`feedback.html${query ? `?${query}` : ""}`);
-  await openExtensionWindow(feedbackURL, { width: 580, height: 740 });
+  await openExtensionTab(feedbackURL);
 });
 
 async function bootstrap() {

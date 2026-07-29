@@ -527,12 +527,14 @@
           width: 112px;
           height: 124px;
           overflow: visible;
-          filter: drop-shadow(0 8px 18px rgba(10, 18, 22, .18));
+          filter:
+            drop-shadow(0 1px 0 rgba(255, 255, 255, .24))
+            drop-shadow(0 8px 18px rgba(10, 18, 22, .22));
         }
         .shield path {
-          fill: rgba(86, 111, 120, .08);
-          stroke: rgba(174, 201, 210, .92);
-          stroke-width: 2;
+          fill: rgba(255, 255, 255, .08);
+          stroke: rgba(255, 255, 255, .78);
+          stroke-width: 2.2;
           stroke-linecap: round;
           stroke-linejoin: round;
           stroke-dasharray: 1;
@@ -1531,7 +1533,11 @@
   }
 
   function mediaIdentityText() {
-    return document.querySelector("meta[property='og:title']")?.content
+    const youtubeTitle = /(^|\.)youtube\.com$/i.test(location.hostname)
+      ? document.querySelector("h1.ytd-watch-metadata yt-formatted-string, #title h1 yt-formatted-string")?.textContent
+      : "";
+    return youtubeTitle
+      || document.querySelector("meta[property='og:title']")?.content
       || document.querySelector("main h1, article h1, h1")?.textContent
       || document.title;
   }
@@ -1844,6 +1850,7 @@
     }
   });
   window.addEventListener("popstate", scheduleContinueWatchingIdentityCheck);
+  document.addEventListener("yt-navigate-finish", scheduleContinueWatchingIdentityCheck);
   const continueWatchingIdentityObserver = new MutationObserver(scheduleContinueWatchingIdentityCheck);
   const observeContinueWatchingIdentity = () => {
     if (document.head) {
