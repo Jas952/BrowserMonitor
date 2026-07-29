@@ -5,6 +5,14 @@ dist/
 .playwright-cli/
 output/
 .codex/
+.cache/
+.codebase-memory/
+.codegraph/
+.obsidian/
+docs/knowledge/.obsidian/
+testing_workspace/
+venv/
+*.mp4
 Extension/_metadata/
 .env
 .env.*

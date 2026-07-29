@@ -1,0 +1,20 @@
+{
+  "extra_ignore_patterns": [
+    ".cache/**",
+    ".codebase-memory/**",
+    ".git/**",
+    ".no-mistakes/**",
+    ".obsidian/**",
+    "dist/**",
+    "output/**",
+    "testing_workspace/**",
+    "venv/**"
+  ],
+  "languages": [
+    "css",
+    "html",
+    "javascript",
+    "json"
+  ],
+  "watch": true
+}

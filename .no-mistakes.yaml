@@ -1,0 +1,32 @@
+agent: codex
+
+commands:
+  test: "rtk npm --prefix Extension test"
+
+ignore_patterns:
+  - ".cache/**"
+  - ".codebase-memory/**"
+  - ".codegraph/**"
+  - ".obsidian/**"
+  - "output/**"
+  - "testing_workspace/**"
+  - "venv/**"
+
+document:
+  instructions: |
+    Перед изменением поведения сверяйся с docs/knowledge/.
+    Документацию Browser Monitor веди на русском языке и сохраняй Obsidian-ссылки.
+
+auto_fix:
+  rebase: 1
+  review: 1
+  test: 1
+  document: 1
+  lint: 1
+  ci: 1
+
+intent:
+  enabled: true
+  threshold: 0.2
+  slack_days: 3
+  disabled_readers: []
