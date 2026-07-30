@@ -19,6 +19,11 @@ docs/knowledge/.obsidian/
 testing_workspace/
 venv/
 
+# Local agent configuration
+AGENTS.md
+.jcodemunch.jsonc
+.no-mistakes.yaml
+
 # Editor and operating-system files
 .DS_Store
 *.xcuserstate
