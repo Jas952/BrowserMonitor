@@ -10,6 +10,19 @@ The project uses three independent validation layers:
 
 These tools affect only development. They are not included in the Chrome extension, do not change permissions, and do not add product telemetry.
 
+## Repository boundaries
+
+- `Extension/` contains the Chrome Web Store product and its tests.
+- `MacApp/` contains the separately built macOS companion and its tests.
+- `cloudflare/feedback-worker/` is optional deployment infrastructure and is never packaged with the extension.
+- `script/` contains only maintained build or data-update entry points.
+- `docs/` contains policy, release, product-memory, and repository presentation files.
+- Generated builds, screenshots, tool caches, secrets, and local media captures stay untracked through the root `.gitignore`.
+
+Keep the extension runtime files at the top level of `Extension/` unless a feature has a clear reusable module boundary. The manifest and extension pages load these files directly, so cosmetic directory moves add release risk without improving runtime efficiency.
+
+The macOS companion follows SwiftPM conventions and groups implementation by responsibility under `App`, `Models`, `Services`, `Stores`, `Support`, and `Views`.
+
 ## Daily workflow
 
 ### During a task
@@ -20,7 +33,11 @@ These tools affect only development. They are not included in the Chrome extensi
 
 ```bash
 rtk npm --prefix Extension test
+rtk swift test --package-path MacApp
+rtk node script/build_release.mjs
 ```
+
+The release builder uses an explicit allowlist. Only its ZIP output is submitted to the Chrome Web Store; repository tests, documentation, the macOS app, and Cloudflare infrastructure are excluded.
 
 ### Before a commit
 
