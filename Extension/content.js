@@ -625,23 +625,29 @@
       rules.push(`
         [aria-label="Реклама"],
         [aria-label="Advertisement"],
-        [data-fast-name*="ad" i],
-        [data-fast-name*="direct" i],
-        [data-zone-name*="ad" i],
-        [data-zone-name*="direct" i],
-        [class*="Direct" i],
+        [data-fast-name="ad"],
+        [data-fast-name="advert"],
+        [data-fast-name="banner"],
+        [data-fast-name="direct-ad"],
+        [data-zone-name="ad"],
+        [data-zone-name="advert"],
+        [data-zone-name="banner"],
+        [data-zone-name="direct-ad"],
         [class*="direct" i][class*="card" i],
         [class*="serp-adv" i],
         [class*="serpAdv" i],
         [class*="Commercial" i],
         [class*="commercial" i],
         [class*="Advert" i],
-        aside [href*="yabs.yandex" i],
-        aside [href*="an.yandex" i],
-        aside [href*="direct.yandex" i],
-        aside:has([href*="yabs.yandex" i]),
-        aside:has([href*="direct.yandex" i]),
-        div:has(> [href*="yabs.yandex" i]) { display: none !important; }
+        aside:has(a[href*="yabs.yandex" i]),
+        aside:has(a[href*="an.yandex" i]),
+        aside:has(a[href*="direct.yandex" i]),
+        li:has(> a[href*="yabs.yandex" i]),
+        li:has(> a[href*="an.yandex" i]),
+        li:has(> a[href*="direct.yandex" i]),
+        div:has(> a[href*="yabs.yandex" i]),
+        div:has(> a[href*="an.yandex" i]),
+        div:has(> a[href*="direct.yandex" i]) { display: none !important; }
       `);
     }
     if (settings.videoAdProtectionEnabled) {
@@ -979,7 +985,7 @@
     const customFilters = [
       ...(protectionSettings.customCosmeticFilters ?? []).slice(0, 200).map(selectorForCurrentSite).filter(Boolean),
       ...(extensionEnabled && contentBlockingEnabled && protectionSettings.cosmeticFilteringEnabled
-        ? subscriptionCosmeticFilters.slice(0, 500)
+        ? subscriptionCosmeticFilters.slice(0, 500).filter(safeSubscriptionCosmeticSelector)
         : [])
     ];
     if (css || customFilters.length > 0) {
@@ -1039,6 +1045,10 @@
     return hostname === domain || hostname.endsWith(`.${domain}`)
       ? filter.slice(separator + 2)
       : "";
+  }
+
+  function safeSubscriptionCosmeticSelector(selector) {
+    return String(selector ?? "").trim().toLowerCase() !== "#movie_video:empty";
   }
 
   function selectorForElement(element) {
@@ -1373,7 +1383,20 @@
     setTimeout(() => host.remove(), 8_000);
   }
 
-  function showContinueWatchingNotice(video, { title, time, url }) {
+  function continueWatchingResumeURL(url, position) {
+    try {
+      const parsed = new URL(url || location.href, location.href);
+      const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+      if ((host === "youtube.com" || host === "youtu.be") && Number.isFinite(position) && position > 0) {
+        parsed.searchParams.set("t", `${Math.max(0, Math.floor(position))}s`);
+      }
+      return parsed.href;
+    } catch {
+      return location.href;
+    }
+  }
+
+  function showContinueWatchingNotice(video, { title, time, url, position }) {
     const russian = searchProtectionLanguage === "ru";
     const noticeID = "browser-monitor-page-notice";
     document.querySelector(`#${noticeID}`)?.remove();
@@ -1424,6 +1447,12 @@
     const goButton = shadow.querySelector(".go");
     goButton.textContent = russian ? "Перейти к плееру" : "Go to player";
     goButton.addEventListener("click", () => {
+      const targetURL = continueWatchingResumeURL(url, position);
+      if (targetURL && targetURL !== location.href) {
+        location.href = targetURL;
+        return;
+      }
+      if (Number.isFinite(position) && position > 0) restoreContinueWatchingPosition(video, position);
       video.scrollIntoView({ behavior: "smooth", block: "center" });
       video.focus({ preventScroll: true });
     });
@@ -1673,7 +1702,8 @@
       showContinueWatchingNotice(video, {
         title,
         time: formatPlaybackTime(position),
-        url: location.href
+        url: saved?.url || location.href,
+        position
       });
     }
   }

@@ -81,7 +81,8 @@ For tasks that change code, extension behavior, builds, permissions, privacy, or
    - `docs/knowledge/Features.md`;
    - `docs/knowledge/Opportunities.md`.
 5. Also update `docs/knowledge/Product.md` when purpose, user flow, permissions, or privacy behavior changes.
-6. In the final response, state which checks ran and which notes changed. If a check could not run, explain why and do not claim it passed.
+6. Add every completed and verified user-visible feature, fix, or improvement to `docs/knowledge/NextRelease.md` under `New tools` or `Other changes`. Do not add internal-only work.
+7. In the final response, state which checks ran and which notes changed. If a check could not run, explain why and do not claim it passed.
 
 For questions, code reading, and tasks that do not change behavior, avoid documentation churn. Read only related notes and edit them only when they contain incorrect or outdated information.
 
@@ -119,6 +120,7 @@ For significant behavior changes, update the relevant files:
 - `docs/knowledge/Architecture.md`: architecture, components, and data flow.
 - `docs/knowledge/Features.md`: implemented capabilities and constraints.
 - `docs/knowledge/Opportunities.md`: modernization and new-tool ideas only.
+- `docs/knowledge/NextRelease.md`: completed user-visible changes planned for the next GitHub Release.
 
 Document:
 

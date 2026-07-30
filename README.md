@@ -36,7 +36,7 @@ Browser Monitor is a local-first Chrome extension that combines content protecti
 - pauses expensive tab activity through reversible Eco Mode controls;
 - hides supported cookie banners, newsletter prompts, surveys, notification prompts, autoplay, and floating video;
 - provides site exceptions, custom filters, an element picker, Image Swap, Picture-in-Picture, and optional cookie export;
-- prepares site-filter reports and feature requests as explicit email drafts;
+- sends site-filter reports and feature requests only after explicit confirmation;
 - includes separate English and Russian settings.
 
 <p align="center">
@@ -51,6 +51,29 @@ Browser Monitor is a local-first Chrome extension that combines content protecti
 4. Pin Browser Monitor to the Chrome toolbar. When using a source checkout instead, choose its `Extension` folder.
 
 All tab measurements and settings remain in the local Chrome profile. Cookies, downloads, and clipboard access are requested only when the related tool is used. See the [privacy policy](./docs/PrivacyPolicy.md) for details.
+
+## Repository layout
+
+| Path | Purpose |
+| --- | --- |
+| `Extension/` | Chrome Manifest V3 extension and its Node test suite. |
+| `MacApp/` | Native macOS 14+ SwiftUI companion, resources, and Swift tests. |
+| `cloudflare/feedback-worker/` | Optional feedback delivery service. It is deployed separately and is not included in the extension package. |
+| `script/` | Maintained release, filter-list, and local macOS build tools. |
+| `docs/` | Privacy policy, release guidance, product notes, and repository media. |
+
+The Chrome Web Store upload is built from an explicit allowlist and contains only extension runtime files:
+
+```bash
+node script/build_release.mjs
+```
+
+For local verification:
+
+```bash
+npm --prefix Extension test
+swift test --package-path MacApp
+```
 
 ## Companion to MacCleaner
 

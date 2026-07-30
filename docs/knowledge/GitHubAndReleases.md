@@ -34,15 +34,6 @@ Write release notes in English:
 ```markdown
 ## What's new
 
-- three to six user-visible changes;
-- each point explains value rather than implementation;
-- related small changes are combined.
-
-New tools must be highlighted as a separate list inside `What's new`:
-
-```markdown
-## What's new
-
 New tools:
 
 - first new tool and the problem it solves;
@@ -52,7 +43,6 @@ Other changes:
 
 - visible improvement or compatibility update;
 - reliability and polish summary.
-```
 
 ## Install
 
@@ -125,7 +115,7 @@ Settings to leave empty or disabled for now:
 
 1. Match claimed capabilities against the actual code.
 2. Update the version in every required location.
-3. Prepare the GitHub Release text using the standard format.
+3. Review `NextRelease.md` and prepare the GitHub Release text using the standard format.
 4. Run the main extension test suite.
 5. Build the ZIP with the release builder.
 6. Verify the archive name, manifest version, ZIP contents, and SHA-256.
@@ -149,3 +139,4 @@ Settings to leave empty or disabled for now:
 - [[Architecture]]
 - [[Features]]
 - [[Opportunities]]
+- [[NextRelease]]

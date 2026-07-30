@@ -1,19 +1,33 @@
+# Build products and generated output
 .build/
 dist/
-.DS_Store
-*.xcuserstate
-.playwright-cli/
 output/
-.codex/
+DerivedData/
+*.app
+*.dSYM/
+Extension/_metadata/
+
+# Local development tools and caches
 .cache/
+.codex/
 .codebase-memory/
 .codegraph/
 .obsidian/
+.playwright-cli/
+.swiftpm/
 docs/knowledge/.obsidian/
 testing_workspace/
 venv/
+
+# Editor and operating-system files
+.DS_Store
+*.xcuserstate
+Screenshot *.png
+
+# Local media captures
 *.mp4
-Extension/_metadata/
+
+# Secrets and local environment
 .env
 .env.*
 *.pem

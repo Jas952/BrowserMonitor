@@ -34,7 +34,7 @@ Blocking and warning statistics are limited to seven local calendar days. Site a
 
 Full page URLs, page titles, and page text are not stored in site activity analytics. Full URLs are used only where a feature explicitly needs to return to a page or prepare a user-requested report, and known tracking or session parameters are removed.
 
-Feedback drafts are limited to the 20 most recent entries and 6 MB in total. They remain local until extension storage is cleared or the extension is uninstalled. A full page URL and title are included only when the user explicitly chooses to report filter problems on the current site. Selecting Send opens a pre-filled email draft to `darktmonth@gmail.com`; the user reviews and explicitly sends it from their mail app. A selected screenshot is not uploaded automatically and must be attached by the user.
+Feedback drafts are limited to the 20 most recent entries and 6 MB in total. They remain local until extension storage is cleared or the extension is uninstalled. A full page URL and limited protection diagnostics are included only when the user explicitly chooses to report filter problems on the current site. When the user selects Send, the extension sends the reply email address, request text, extension version, optional site-report details, and an optional user-selected screenshot to the Browser Monitor feedback endpoint. The endpoint is hosted on Cloudflare Workers and forwards the request through the configured email provider. The Worker does not use a database or retain a separate copy of the request.
 
 Cookie values are not added to analytics, settings backups, or extension storage. A cookie export is created only after a direct user action and is saved or copied to the destination chosen by that user. Exported cookie files can grant access to signed-in accounts and must be kept private.
 
@@ -42,7 +42,7 @@ Cookie values are not added to analytics, settings backups, or extension storage
 
 Browser Monitor does not transmit browsing history, tab analytics, Link Safety checks, History filter domains, cookies, custom images, settings, or user-created rules to the developer or to analytics providers.
 
-When the user explicitly continues from the feedback form, Chrome opens a `mailto:` draft containing the provided email, request text, extension version, and any explicitly selected site-report details. Nothing is sent until the user sends that email in their mail app.
+When the user explicitly selects Send in the feedback form, Chrome connects to the Browser Monitor feedback endpoint hosted on Cloudflare Workers. The endpoint receives only the fields shown or described in the form: reply email address, request text, extension version, optional current-site report details, limited protection settings used for diagnostics, and an optional screenshot selected by the user. Cloudflare and the configured email provider may receive ordinary connection and delivery information. Browser Monitor does not send feedback data before this explicit action.
 
 If the user explicitly adds a custom HTTPS filter-list URL, Chrome contacts that address to download the list. The operator of that address may receive ordinary request information such as the user's IP address and user agent. Browser Monitor accepts only bounded filter data and does not send browsing history or cookies with that request.
 
@@ -50,7 +50,7 @@ When sponsored-segment skipping is enabled and the user opens a YouTube video, B
 
 ## Sharing and Selling Data
 
-Browser Monitor does not sell user data, use it for advertising or credit decisions, share it with data brokers, or allow the developer or other humans to read local extension data. Third-party network interactions are limited to user-configured HTTPS filter-list downloads, the optional SponsorBlock lookup, and explicit email feedback handoff described above.
+Browser Monitor does not sell user data, use it for advertising or credit decisions, or share it with data brokers. Local extension data is not available to the developer. Feedback content is delivered to the developer only after the user explicitly submits the form. Third-party network interactions are limited to user-configured HTTPS filter-list downloads, the optional SponsorBlock lookup, and explicit feedback delivery through Cloudflare Workers and the configured email provider as described above.
 
 ## Permissions
 
@@ -82,9 +82,9 @@ Browser Monitor — локальное расширение Chrome для бол
 
 Данные хранятся в профиле Chrome до изменения или сброса настроек, очистки хранилища либо удаления расширения. Статистика блокировок ограничена семью днями, аналитика посещений — 90 днями, записи продолжения просмотра — 100 записями и 90 днями, redirect chains — 100 записями и 30 днями, Crypto Guard fingerprints — пятью минутами.
 
-Черновики обратной связи содержат указанную пользователем почту, текст, статус и необязательный screenshot. Быстрый репорт фильтров дополнительно включает явно выбранный пользователем URL/заголовок страницы и ограниченную диагностику. Хранятся не более 20 последних записей и не более 6 МБ суммарно. Кнопка отправки открывает заполненное письмо на `darktmonth@gmail.com`; пользователь проверяет и отправляет письмо самостоятельно. Screenshot автоматически не отправляется и прикрепляется пользователем.
+Черновики обратной связи содержат указанную пользователем почту, текст, статус и необязательный screenshot. Быстрый репорт фильтров дополнительно включает явно выбранный пользователем URL страницы и ограниченную диагностику настроек защиты. Хранятся не более 20 последних записей и не более 6 МБ суммарно. Только после нажатия Send расширение отправляет эти данные и выбранный пользователем screenshot в endpoint Browser Monitor на Cloudflare Workers. Worker передаёт обращение через настроенного поставщика электронной почты, не использует базу данных и не хранит отдельную копию обращения. Cloudflare и поставщик электронной почты могут получать обычные технические сведения о соединении и доставке.
 
-Browser Monitor не продаёт и не передаёт историю, аналитику вкладок, cookies, изображения или настройки разработчику, рекламным платформам и брокерам данных. Проверка подозрительных ссылок и результатов поиска выполняется локально и не отправляет URL на внешний reputation-сервис.
+Browser Monitor не продаёт историю, аналитику вкладок, cookies, изображения или настройки, не использует их для рекламы и не передаёт брокерам данных. Локальные данные расширения недоступны разработчику. Содержимое обращения получает разработчик только после явной отправки формы пользователем. Проверка подозрительных ссылок и результатов поиска выполняется локально и не отправляет URL на внешний reputation-сервис.
 
 При добавлении собственного HTTPS-списка фильтров Chrome обращается непосредственно к указанному пользователем адресу. Если включён SponsorBlock и открыто видео YouTube, Browser Monitor обращается к публичному API `sponsor.ajay.app`, передавая только четыре символа SHA-256 от ID видео и категории `sponsor` / `selfpromo`.
 

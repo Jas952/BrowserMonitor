@@ -18,6 +18,7 @@ Only implemented user-facing capabilities are listed here.
 | Tab tools | Duplicate-tab detection and closing, plus a configurable popup tool order. |
 | Feedback | Direct feedback request form via a configured Cloudflare endpoint after explicit user action. |
 | Interface | Popup, Settings, Statistics, Activity, and warning pages in English and Russian. Statistics and Activity reuse one dedicated window each; other extension pages reuse browser tabs. |
+| macOS companion | Compact Chrome/Edge/Safari picker with platform badges, card-attached install choices, separate fullscreen media tour with nested slides, replayable onboarding, and General/About settings with project and GitHub Star guidance. |
 
 ## Main limitations
 
