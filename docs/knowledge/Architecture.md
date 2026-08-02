@@ -34,6 +34,6 @@ The macOS app uses SwiftPM and separates app state, models, services, stores, su
 - User data remains local except for explicit feedback, user-enabled external features, companion release downloads, and signed appcast checks.
 - The feedback Worker stores no database records. The macOS app performs no background monitoring.
 - Companion update discovery uses a six-hour Sparkle schedule. Automatic download is disabled, and the GitHub release DMG must have a valid EdDSA signature in `appcast.xml` before Sparkle offers installation.
-- A checked-in empty appcast keeps the pre-release channel valid. Manual checks expose only two user-facing results: no update is available, or Sparkle offers a verified update for installation.
+- A checked-in empty appcast keeps the pre-release channel valid. Manual checks distinguish an unavailable update, a verified update that Sparkle offers for installation, and feed/check failures.
 
 See [[Features]] for behavior and [[Product]] for product boundaries.

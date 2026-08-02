@@ -124,15 +124,11 @@ Settings to leave empty or disabled for now:
 1. Match claimed capabilities against the actual code.
 2. Update the version in every required location.
 3. Review `NextRelease.md` and prepare the GitHub Release text using the standard format.
-4. Run the main extension test suite.
-5. Build the ZIP with the release builder.
-6. Verify the archive name, manifest version, ZIP contents, and SHA-256.
-7. Commit the release scope separately.
-8. Push changes to GitHub and confirm that the release commit is on the main branch.
-9. Create tag `vX.Y.Z`.
-10. Create the GitHub Release and attach the ZIP and `SHA256SUMS.txt`.
-11. Attach `BrowserMonitor.dmg`, generate its EdDSA-signed Sparkle appcast entry, and publish `appcast.xml` on `main`.
-12. Verify the published page, text, tag, extension ZIP, macOS DMG, checksums, and appcast download.
+4. Run both product test suites and build the extension ZIP locally.
+5. Verify the archive name, manifest version, ZIP contents, and SHA-256.
+6. Commit the release scope separately, push it, and confirm the release commit is on `main`.
+7. Create and push tag `vX.Y.Z`. The release workflow validates the tag against the manifest, repeats both test suites, builds the extension ZIP and macOS DMG, signs the DMG appcast entry, and creates or updates the GitHub Release.
+8. Verify the published page, text, tag, extension ZIP, macOS DMG, checksums, and appcast download. Confirm the workflow committed the generated `appcast.xml` to `main`.
 
 The release workflow requires `SPARKLE_PRIVATE_KEY` in GitHub Actions secrets. Its matching public key is embedded in the companion app; never commit or print the private key. Each release tag must produce a strictly increasing macOS `CFBundleVersion`, and the app must be copied to a writable location such as `/Applications` before self-update. The current ad-hoc distribution still shows Gatekeeper's unknown-developer warning on first install; Sparkle's EdDSA verification secures later update packages but does not replace Developer ID signing or notarization.
 
