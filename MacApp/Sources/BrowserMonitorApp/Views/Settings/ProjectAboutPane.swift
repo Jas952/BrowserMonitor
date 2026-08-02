@@ -42,9 +42,13 @@ struct ProjectAboutPane: View {
             StarInstructionCard(repositoryURL: repositoryURL)
         }
         .padding(20)
-        .alert("No updates available", isPresented: noticeIsPresented) {
+        .alert(updateService.notice?.title ?? "", isPresented: noticeIsPresented) {
             Button("OK") {
                 updateService.dismissNotice()
+            }
+        } message: {
+            if let message = updateService.notice?.message {
+                Text(message)
             }
         }
     }

@@ -12,7 +12,8 @@ final class UpdateServiceTests: XCTestCase {
         let presentation = UpdateService.presentation(for: .noUpdate)
 
         XCTAssertEqual(presentation.status, .upToDate)
-        XCTAssertEqual(presentation.notice, "No updates available.")
+        XCTAssertEqual(presentation.notice.title, "No updates available")
+        XCTAssertEqual(presentation.notice.message, "Browser Monitor is up to date.")
     }
 
     func testMissingFeedURLReportsFailure() {
@@ -52,6 +53,8 @@ final class UpdateServiceTests: XCTestCase {
             return XCTFail("Expected a failed update status", file: file, line: line)
         }
         XCTAssertTrue(message.hasPrefix("Unable to check for updates."), file: file, line: line)
-        XCTAssertEqual(presentation.notice, message, file: file, line: line)
+        XCTAssertEqual(presentation.notice.title, "Unable to check for updates", file: file, line: line)
+        XCTAssertFalse(presentation.notice.message.isEmpty, file: file, line: line)
+        XCTAssertTrue(message.hasSuffix(presentation.notice.message), file: file, line: line)
     }
 }

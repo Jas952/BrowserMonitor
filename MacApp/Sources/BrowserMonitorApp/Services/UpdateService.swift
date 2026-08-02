@@ -42,7 +42,12 @@ final class UpdateService: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     struct ManualCheckPresentation: Equatable {
         let status: Status
-        let notice: String
+        let notice: Notice
+    }
+
+    struct Notice: Equatable {
+        let title: String
+        let message: String
     }
 
     enum FeedPreflightError: LocalizedError {
@@ -64,7 +69,7 @@ final class UpdateService: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     @Published private(set) var status: Status = .idle
     @Published private(set) var canCheckForUpdates = false
-    @Published private(set) var notice: String?
+    @Published private(set) var notice: Notice?
 
     private static let pendingVersionKey = "BrowserMonitorPendingUpdateVersion"
     private var manualCheckInProgress = false
@@ -185,15 +190,27 @@ final class UpdateService: NSObject, ObservableObject, SPUUpdaterDelegate {
     }
 
     nonisolated static func failureCompletion(for error: Error) -> ManualCheckCompletion {
-        .failed("Unable to check for updates. \(error.localizedDescription)")
+        .failed(error.localizedDescription)
     }
 
     nonisolated static func presentation(for completion: ManualCheckCompletion) -> ManualCheckPresentation {
         switch completion {
         case .noUpdate:
-            ManualCheckPresentation(status: .upToDate, notice: "No updates available.")
-        case .failed(let message):
-            ManualCheckPresentation(status: .failed(message), notice: message)
+            ManualCheckPresentation(
+                status: .upToDate,
+                notice: Notice(
+                    title: "No updates available",
+                    message: "Browser Monitor is up to date."
+                )
+            )
+        case .failed(let detail):
+            ManualCheckPresentation(
+                status: .failed("Unable to check for updates. \(detail)"),
+                notice: Notice(
+                    title: "Unable to check for updates",
+                    message: detail
+                )
+            )
         }
     }
 
