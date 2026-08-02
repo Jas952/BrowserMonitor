@@ -1,19 +1,19 @@
 import SwiftUI
 
-struct ProjectAboutPane: View {
-    private let repositoryURL = URL(string: "https://github.com/Jas952/BrowserMonitor")!
+private let aboutAccent = Color(red: 0.20, green: 0.45, blue: 0.98)
 
-    private var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
-    }
+struct ProjectAboutPane: View {
+    @StateObject private var updateService = UpdateService.shared
+    private let repositoryURL = URL(string: "https://github.com/Jas952/BrowserMonitor")!
 
     var body: some View {
         VStack(spacing: 14) {
-            VStack(spacing: 7) {
-                AppBrandView()
-                Text("Version \(version)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+            HStack {
+                AppBrandView(
+                    detailText: "Version \(updateService.currentVersion)",
+                    detailAccessory: AnyView(updateButton)
+                )
+                Spacer(minLength: 0)
             }
 
             Divider()
@@ -42,6 +42,57 @@ struct ProjectAboutPane: View {
             StarInstructionCard(repositoryURL: repositoryURL)
         }
         .padding(20)
+        .alert(updateService.notice?.title ?? "", isPresented: noticeIsPresented) {
+            Button("OK") {
+                updateService.dismissNotice()
+            }
+        } message: {
+            if let message = updateService.notice?.message {
+                Text(message)
+            }
+        }
+    }
+
+    private var noticeIsPresented: Binding<Bool> {
+        Binding(
+            get: { updateService.notice != nil },
+            set: { isPresented in
+                if !isPresented {
+                    updateService.dismissNotice()
+                }
+            }
+        )
+    }
+
+    @ViewBuilder
+    private var updateButton: some View {
+        Button {
+            updateService.checkForUpdates()
+        } label: {
+            if updateService.status == .checking {
+                ProgressView()
+                    .controlSize(.mini)
+                    .frame(width: 14, height: 14)
+            } else {
+                Image(systemName: updateService.status.symbolName)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(updateStatusColor)
+            }
+        }
+        .buttonStyle(.borderless)
+        .disabled(!updateService.canCheckForUpdates || updateService.status == .checking)
+        .help(updateService.status.detailText)
+        .accessibilityLabel("Check for Browser Monitor updates")
+        .accessibilityValue(updateService.status.detailText)
+    }
+
+    private var updateStatusColor: Color {
+        switch updateService.status {
+        case .available: .accentColor
+        case .failed: .orange
+        case .upToDate, .installed: .green
+        case .idle, .checking: .secondary
+        }
     }
 }
 
@@ -81,7 +132,7 @@ private struct StarInstructionCard: View {
         .background(
             LinearGradient(
                 colors: [
-                    Color.onboardingAccent.opacity(0.08),
+                    aboutAccent.opacity(0.08),
                     Color.purple.opacity(0.045)
                 ],
                 startPoint: .topLeading,
@@ -91,7 +142,7 @@ private struct StarInstructionCard: View {
         )
         .overlay {
             RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.onboardingAccent.opacity(0.16))
+                .stroke(aboutAccent.opacity(0.16))
         }
     }
 }
@@ -108,8 +159,7 @@ private struct GitHubStarLocationDiagram: View {
                     FadedGitHubControl(symbol: "eye", width: 66)
                     FadedGitHubControl(symbol: "arrow.triangle.branch", width: 58)
                     Spacer()
-                    Color.clear
-                        .frame(width: 102, height: 28)
+                    GitHubStarControl()
                 }
                 .padding(10)
                 .background(Color.secondary.opacity(0.04))
@@ -135,37 +185,6 @@ private struct GitHubStarLocationDiagram: View {
                 .foregroundStyle(Color.secondary.opacity(0.12))
             }
 
-            StarGuideArrow()
-                .stroke(
-                    Color.onboardingAccent,
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round, dash: [5, 4])
-                )
-                .shadow(color: Color.onboardingAccent.opacity(0.18), radius: 2)
-                .frame(width: 94, height: 46)
-                .offset(x: 82, y: 27)
-
-            HStack(spacing: 6) {
-                Image(systemName: "star")
-                Text("Star")
-                Text("0")
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(Color.secondary.opacity(0.12), in: Capsule())
-                Divider()
-                    .frame(height: 18)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 7, weight: .bold))
-            }
-            .font(.system(size: 10, weight: .semibold))
-            .padding(.horizontal, 8)
-            .frame(height: 28)
-            .background(.background, in: RoundedRectangle(cornerRadius: 7))
-            .overlay {
-                RoundedRectangle(cornerRadius: 7)
-                    .stroke(Color.onboardingAccent, lineWidth: 2)
-            }
-            .shadow(color: Color.onboardingAccent.opacity(0.25), radius: 8)
-            .offset(x: 151, y: -31)
         }
         .frame(height: 112)
         .overlay {
@@ -174,6 +193,32 @@ private struct GitHubStarLocationDiagram: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("GitHub repository preview. The Star button is in the upper-right area.")
+    }
+}
+
+private struct GitHubStarControl: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "star")
+            Text("Star")
+            Text("0")
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Color.secondary.opacity(0.12), in: Capsule())
+            Divider()
+                .frame(height: 18)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 7, weight: .bold))
+        }
+        .font(.system(size: 10, weight: .semibold))
+        .padding(.horizontal, 8)
+        .frame(height: 28)
+        .background(.background, in: RoundedRectangle(cornerRadius: 7))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7)
+                .stroke(aboutAccent, lineWidth: 2)
+        }
+        .shadow(color: aboutAccent.opacity(0.25), radius: 8)
     }
 }
 
@@ -195,21 +240,5 @@ private struct FadedGitHubControl: View {
             RoundedRectangle(cornerRadius: 7)
                 .stroke(Color.secondary.opacity(0.12))
         }
-    }
-}
-
-private struct StarGuideArrow: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addCurve(
-            to: CGPoint(x: rect.maxX - 7, y: rect.minY + 8),
-            control1: CGPoint(x: rect.width * 0.54, y: rect.maxY),
-            control2: CGPoint(x: rect.width * 0.58, y: rect.minY + 8)
-        )
-        path.move(to: CGPoint(x: rect.maxX - 16, y: rect.minY + 7))
-        path.addLine(to: CGPoint(x: rect.maxX - 7, y: rect.minY + 8))
-        path.addLine(to: CGPoint(x: rect.maxX - 10, y: rect.minY + 17))
-        return path
     }
 }

@@ -5,6 +5,10 @@ MODE="${1:-run}"
 APP_NAME="BrowserMonitor"
 BUNDLE_ID="dev.browsermonitor.companion"
 MIN_SYSTEM_VERSION="14.0"
+BUILD_CONFIGURATION="${BROWSER_MONITOR_CONFIGURATION:-debug}"
+APP_VERSION="${BROWSER_MONITOR_VERSION:-0.1.0}"
+APP_BUILD_NUMBER="${BROWSER_MONITOR_BUILD_NUMBER:-1}"
+SPARKLE_PUBLIC_KEY="${BROWSER_MONITOR_SPARKLE_PUBLIC_KEY:-DKZ5lZYnbPUGdDjI/eKNur1rIky8H3MQ4AQBpEAesuo=}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE_DIR="$ROOT_DIR/MacApp"
@@ -13,6 +17,7 @@ APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
+APP_FRAMEWORKS="$APP_CONTENTS/Frameworks"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 ICON_SOURCE="$PACKAGE_DIR/Sources/BrowserMonitorApp/Resources/browser-monitor.png"
@@ -20,19 +25,21 @@ ICONSET_DIR="$DIST_DIR/AppIcon.iconset"
 
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
-swift build --package-path "$PACKAGE_DIR"
-BIN_PATH="$(swift build --package-path "$PACKAGE_DIR" --show-bin-path)"
+swift build --package-path "$PACKAGE_DIR" --configuration "$BUILD_CONFIGURATION"
+BIN_PATH="$(swift build --package-path "$PACKAGE_DIR" --configuration "$BUILD_CONFIGURATION" --show-bin-path)"
 BUILD_BINARY="$BIN_PATH/$APP_NAME"
 
 rm -rf "$APP_BUNDLE"
-mkdir -p "$APP_MACOS" "$APP_RESOURCES"
+mkdir -p "$APP_MACOS" "$APP_RESOURCES" "$APP_FRAMEWORKS"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
+
+cp -R "$BIN_PATH/Sparkle.framework" "$APP_FRAMEWORKS/"
+/usr/bin/install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BINARY"
 
 RESOURCE_BUNDLE="$BIN_PATH/BrowserMonitorApp_BrowserMonitorApp.bundle"
 if [[ -d "$RESOURCE_BUNDLE" ]]; then
   cp -R "$RESOURCE_BUNDLE" "$APP_RESOURCES/"
-  cp -R "$RESOURCE_BUNDLE" "$APP_BUNDLE/"
 fi
 
 rm -rf "$ICONSET_DIR"
@@ -73,22 +80,38 @@ cat >"$INFO_PLIST" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>$APP_VERSION</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>$APP_BUILD_NUMBER</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
+  <key>SUFeedURL</key>
+  <string>https://raw.githubusercontent.com/Jas952/BrowserMonitor/main/appcast.xml</string>
+  <key>SUPublicEDKey</key>
+  <string>$SPARKLE_PUBLIC_KEY</string>
+  <key>SUScheduledCheckInterval</key>
+  <integer>21600</integer>
+  <key>SUEnableAutomaticChecks</key>
+  <true/>
+  <key>SUAutomaticallyUpdate</key>
+  <false/>
 </dict>
 </plist>
 PLIST
+
+/usr/bin/codesign --force --deep --sign - "$APP_FRAMEWORKS/Sparkle.framework"
+/usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"
+/usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
 }
 
 case "$MODE" in
+  build)
+    ;;
   run)
     open_app
     ;;
@@ -109,7 +132,7 @@ case "$MODE" in
     pgrep -x "$APP_NAME" >/dev/null
     ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
+    echo "usage: $0 [build|run|--debug|--logs|--telemetry|--verify]" >&2
     exit 2
     ;;
 esac

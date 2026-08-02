@@ -3,16 +3,12 @@ import SwiftUI
 
 private let companionBlue = Color(red: 0.18, green: 0.43, blue: 0.96)
 
-private enum DesktopPlatform: String, Hashable {
-    case macOS
-    case windows = "Windows"
-}
-
 struct BrowserSelectionView: View {
-    @EnvironmentObject private var appState: AppState
+    @Environment(\.openWindow) private var openWindow
     @ObservedObject var downloadManager: ReleaseDownloadManager
 
     @State private var showsInstallChoices = false
+    @State private var selectedBrowserID = BrowserOption.chrome.id
     @State private var message: String?
     @State private var isDownloading = false
 
@@ -43,9 +39,9 @@ struct BrowserSelectionView: View {
             Spacer()
 
             Button {
-                appState.presentOnboarding()
+                openWindow(id: "extension-info")
             } label: {
-                Label("Replay Intro", systemImage: "arrow.counterclockwise")
+                Label("Info", systemImage: "info.circle")
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
@@ -75,51 +71,36 @@ struct BrowserSelectionView: View {
                 .padding(.top, 4)
 
             HStack(alignment: .top, spacing: 16) {
-                BrowserChoiceCard(
-                    title: "Chrome",
-                    bundleIdentifier: "com.google.Chrome",
-                    fallbackSymbol: "globe",
-                    platforms: [.macOS, .windows],
-                    isSelected: true,
-                    isAvailable: true
-                ) {
-                    showsInstallChoices.toggle()
-                }
-                .background {
-                    AnchoredPanelPresenter(
-                        isPresented: $showsInstallChoices,
-                        panelSize: CGSize(width: 224, height: 108)
+                ForEach(BrowserOption.catalog) { browser in
+                    BrowserChoiceCard(
+                        browser: browser,
+                        isSelected: selectedBrowserID == browser.id
                     ) {
-                        InstallChoicePanel(
-                            downloadManager: downloadManager,
-                            isDownloading: $isDownloading,
-                            message: $message,
-                            dismiss: { showsInstallChoices = false }
-                        )
-                        .preferredColorScheme(.light)
+                        if selectedBrowserID == browser.id {
+                            showsInstallChoices.toggle()
+                        } else {
+                            selectedBrowserID = browser.id
+                            showsInstallChoices = true
+                        }
+                    }
+                    .background {
+                        if browser.isAvailable {
+                            AnchoredPanelPresenter(
+                                isPresented: installPanelBinding(for: browser),
+                                panelSize: CGSize(width: 224, height: 108)
+                            ) {
+                                InstallChoicePanel(
+                                    browser: browser,
+                                    downloadManager: downloadManager,
+                                    isDownloading: $isDownloading,
+                                    message: $message,
+                                    dismiss: { showsInstallChoices = false }
+                                )
+                                .preferredColorScheme(.light)
+                            }
+                        }
                     }
                 }
-
-                BrowserChoiceCard(
-                    title: "Edge",
-                    bundleIdentifier: "com.microsoft.edgemac",
-                    fallbackSymbol: "wave.3.right",
-                    fallbackAsset: "edge",
-                    platforms: [.macOS, .windows],
-                    isSelected: false,
-                    isAvailable: false,
-                    action: {}
-                )
-
-                BrowserChoiceCard(
-                    title: "Safari",
-                    bundleIdentifier: "com.apple.Safari",
-                    fallbackSymbol: "safari",
-                    platforms: [.macOS],
-                    isSelected: false,
-                    isAvailable: false,
-                    action: {}
-                )
             }
             .padding(.top, 18)
         }
@@ -127,51 +108,48 @@ struct BrowserSelectionView: View {
         .padding(.bottom, 18)
         .frame(maxHeight: .infinity, alignment: .top)
     }
+
+    private func installPanelBinding(for browser: BrowserOption) -> Binding<Bool> {
+        Binding(
+            get: { showsInstallChoices && selectedBrowserID == browser.id },
+            set: { isPresented in
+                if !isPresented, selectedBrowserID == browser.id {
+                    showsInstallChoices = false
+                }
+            }
+        )
+    }
 }
 
 private struct BrowserChoiceCard: View {
-    let title: String
-    let bundleIdentifier: String
-    let fallbackSymbol: String
-    var fallbackAsset: String? = nil
-    let platforms: [DesktopPlatform]
+    let browser: BrowserOption
     let isSelected: Bool
-    let isAvailable: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 10) {
                 BrowserAppIconView(
-                    bundleIdentifier: bundleIdentifier,
-                    fallbackSymbol: fallbackSymbol,
-                    fallbackAsset: fallbackAsset,
+                    bundleIdentifier: browser.bundleIdentifier,
+                    fallbackSymbol: browser.fallbackSymbol,
+                    fallbackAsset: browser.fallbackAsset,
                     size: 58
                 )
 
-                Text(title)
+                Text(browser.name)
                     .font(.body.weight(.medium))
-                    .foregroundStyle(isAvailable ? .primary : .secondary)
+                    .foregroundStyle(browser.isAvailable ? .primary : .secondary)
 
-                PlatformBadgeRow(platforms: platforms)
+                PlatformBadgeRow(platforms: browser.platforms)
             }
             .frame(width: 142, height: 152)
             .contentShape(RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
         .background(
-            Color(nsColor: .controlBackgroundColor).opacity(isAvailable ? 0.9 : 0.62),
+            Color(nsColor: .controlBackgroundColor).opacity(browser.isAvailable ? 0.9 : 0.62),
             in: RoundedRectangle(cornerRadius: 16)
         )
-        .overlay(alignment: .topTrailing) {
-            if isSelected {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.title2)
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, companionBlue)
-                    .offset(x: 10, y: -10)
-            }
-        }
         .overlay {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(
@@ -179,9 +157,34 @@ private struct BrowserChoiceCard: View {
                     lineWidth: isSelected ? 2 : 1
                 )
         }
+        .overlay(alignment: .topTrailing) {
+            if isSelected {
+                SelectionCornerBadge()
+            }
+        }
         .shadow(color: isSelected ? companionBlue.opacity(0.10) : .clear, radius: 12, y: 5)
-        .disabled(!isAvailable)
-        .help(isAvailable ? "Choose \(title)" : "\(title) support is planned")
+        .disabled(!browser.isAvailable)
+        .help(browser.isAvailable ? "Choose \(browser.name)" : "\(browser.name) support is planned")
+    }
+}
+
+private struct SelectionCornerBadge: View {
+    var body: some View {
+        Image(systemName: "checkmark")
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: 36, height: 32)
+            .background(
+                companionBlue,
+                in: UnevenRoundedRectangle(
+                    topLeadingRadius: 0,
+                    bottomLeadingRadius: 14,
+                    bottomTrailingRadius: 0,
+                    topTrailingRadius: 15,
+                    style: .continuous
+                )
+            )
+            .accessibilityHidden(true)
     }
 }
 
@@ -233,32 +236,41 @@ private struct WindowsMark: View {
 }
 
 private struct InstallChoicePanel: View {
+    let browser: BrowserOption
     @ObservedObject var downloadManager: ReleaseDownloadManager
     @Binding var isDownloading: Bool
     @Binding var message: String?
     let dismiss: () -> Void
 
     var body: some View {
-        ZStack(alignment: .top) {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
+        ZStack {
+            InstallPanelShape()
                 .fill(Color(nsColor: .windowBackgroundColor))
-                .padding(.top, 6)
-                .shadow(color: .black.opacity(0.16), radius: 15, y: 8)
 
-            Rectangle()
-                .fill(Color(nsColor: .windowBackgroundColor))
-                .frame(width: 14, height: 14)
-                .rotationEffect(.degrees(45))
-                .offset(y: 1)
+            InstallPanelTopOutline()
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            companionBlue.opacity(0),
+                            companionBlue.opacity(0.20),
+                            Color.secondary.opacity(0.34),
+                            companionBlue.opacity(0.20),
+                            companionBlue.opacity(0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round)
+                )
 
             VStack(spacing: 0) {
                 InstallMenuItem(title: "Open Web Store", symbol: "bag") {
-                    if let storeURL = BrowserOption.chrome.storeURL {
+                    if let storeURL = browser.storeURL {
                         NSWorkspace.shared.open(storeURL)
                         dismiss()
                     } else {
                         dismiss()
-                        message = "The official Browser Monitor page in Chrome Web Store has not been published yet."
+                        message = "The official Browser Monitor page in \(browser.storeName) has not been published yet."
                     }
                 }
 
@@ -273,7 +285,14 @@ private struct InstallChoicePanel: View {
                     isDownloading = true
                     dismiss()
                     Task {
-                        await downloadManager.downloadLatest()
+                        switch browser.archiveSource {
+                        case .latestGitHubRelease:
+                            await downloadManager.downloadLatest()
+                        case .direct(let url, let filename):
+                            await downloadManager.downloadArchive(from: url, filename: filename)
+                        case .unavailable:
+                            message = "A ZIP download is not available for \(browser.name) yet."
+                        }
                         isDownloading = false
                         if case .failed(let error) = downloadManager.state {
                             message = error
@@ -285,11 +304,68 @@ private struct InstallChoicePanel: View {
             .padding(7)
         }
         .frame(width: 224, height: 108)
-        .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .stroke(Color.secondary.opacity(0.16))
-                .padding(.top, 6)
-        }
+    }
+}
+
+private struct InstallPanelShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let radius: CGFloat = 13
+        let arrowHalfWidth: CGFloat = 8
+        let bodyTop: CGFloat = 7
+        let middle = rect.midX
+
+        var path = Path()
+        path.move(to: CGPoint(x: radius, y: bodyTop))
+        path.addLine(to: CGPoint(x: middle - arrowHalfWidth, y: bodyTop))
+        path.addLine(to: CGPoint(x: middle, y: 0))
+        path.addLine(to: CGPoint(x: middle + arrowHalfWidth, y: bodyTop))
+        path.addLine(to: CGPoint(x: rect.maxX - radius, y: bodyTop))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: bodyTop + radius),
+            control: CGPoint(x: rect.maxX, y: bodyTop)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX - radius, y: rect.maxY),
+            control: CGPoint(x: rect.maxX, y: rect.maxY)
+        )
+        path.addLine(to: CGPoint(x: radius, y: rect.maxY))
+        path.addQuadCurve(
+            to: CGPoint(x: 0, y: rect.maxY - radius),
+            control: CGPoint(x: 0, y: rect.maxY)
+        )
+        path.addLine(to: CGPoint(x: 0, y: bodyTop + radius))
+        path.addQuadCurve(
+            to: CGPoint(x: radius, y: bodyTop),
+            control: CGPoint(x: 0, y: bodyTop)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct InstallPanelTopOutline: Shape {
+    func path(in rect: CGRect) -> Path {
+        let radius: CGFloat = 13
+        let arrowHalfWidth: CGFloat = 8
+        let bodyTop: CGFloat = 7
+        let middle = rect.midX
+
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: bodyTop + radius))
+        path.addQuadCurve(
+            to: CGPoint(x: radius, y: bodyTop),
+            control: CGPoint(x: 0, y: bodyTop)
+        )
+        path.addLine(to: CGPoint(x: middle - arrowHalfWidth, y: bodyTop))
+        path.addLine(to: CGPoint(x: middle, y: 0))
+        path.addLine(to: CGPoint(x: middle + arrowHalfWidth, y: bodyTop))
+        path.addLine(to: CGPoint(x: rect.maxX - radius, y: bodyTop))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: bodyTop + radius),
+            control: CGPoint(x: rect.maxX, y: bodyTop)
+        )
+        return path
     }
 }
 

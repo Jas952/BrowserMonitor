@@ -14,3 +14,12 @@ Concise technical decisions that affect Browser Monitor behavior.
 - Feedback sends an explicit form submission to a configured Cloudflare Worker endpoint instead of GitHub Issues or `mailto:`. The extension keeps a bounded local outbox copy, and provider credentials stay only in Cloudflare secrets.
 
 Related notes: [[Architecture]], [[Features]], [[Product]].
+
+## macOS companion updates
+
+- Use Sparkle 2.9.4 with an HTTPS appcast and EdDSA-signed GitHub release DMGs.
+- Scheduled checks run every six hours, but background download and silent installation are disabled. The user starts Download, Install, and Relaunch through Sparkle's standard UI.
+- Ad-hoc packaging supports the current unknown-developer distribution model. It does not remove the first-install Gatekeeper warning or replace future Developer ID signing and notarization.
+- Release tags provide the marketing version, while the GitHub Actions run number provides a monotonically increasing bundle build number.
+
+Related notes: [[Architecture]], [[Features]], [[GitHubAndReleases]], [[Product]].

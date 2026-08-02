@@ -10,9 +10,15 @@ let package = Package(
     products: [
         .executable(name: "BrowserMonitor", targets: ["BrowserMonitorApp"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.4")
+    ],
     targets: [
         .executableTarget(
             name: "BrowserMonitorApp",
+            dependencies: [
+                .product(name: "Sparkle", package: "Sparkle")
+            ],
             resources: [.process("Resources")]
         ),
         .testTarget(

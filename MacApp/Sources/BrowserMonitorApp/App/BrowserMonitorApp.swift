@@ -13,17 +13,12 @@ struct BrowserMonitorApp: App {
         }
         .defaultSize(width: 620, height: 350)
         .windowResizability(.contentSize)
-        .commands {
-            CommandGroup(after: .appSettings) {
-                Divider()
-                Button {
-                    appState.presentOnboarding()
-                } label: {
-                    Label("Replay Intro", systemImage: "arrow.counterclockwise")
-                }
-                .keyboardShortcut("i", modifiers: [.command, .shift])
-            }
+
+        Window("About Browser Monitor", id: "extension-info") {
+            ExtensionInfoView()
         }
+        .defaultSize(width: 510, height: 400)
+        .windowResizability(.contentSize)
 
         Settings {
             SettingsView()
@@ -33,12 +28,11 @@ struct BrowserMonitorApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
+        _ = UpdateService.shared
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
-        DispatchQueue.main.async {
-            AppState.shared.presentInitialOnboardingIfNeeded()
-        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
