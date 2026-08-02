@@ -23,7 +23,7 @@ body { display: grid; min-height: 100vh; grid-template-rows: auto 1fr auto; }
 button { font: inherit; color: inherit; }
 .window-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 22px 28px 18px; border-bottom: 1px solid var(--line); }
 .brand { display: flex; min-width: 0; align-items: center; gap: 13px; }
-.brand img { width: 36px; height: 36px; opacity: .75; filter: saturate(.75); }
+.brand img { width: 36px; height: 36px; object-fit: contain; }
 h1, h2, p { margin: 0; }
 h1 { font-size: 21px; font-weight: 680; letter-spacing: -.035em; }
 .brand p { margin-top: 3px; color: var(--secondary); font-size: 11px; }

@@ -60,6 +60,43 @@ final class ReleaseDownloadManager: ObservableObject {
             return
         }
 
+        await download(asset: asset, from: release)
+    }
+
+    func downloadArchive(from url: URL, filename: String? = nil) async {
+        guard !isBusy else { return }
+
+        let urlFilename = url.lastPathComponent
+        let preferredFilename = filename?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedFilename: String
+        if let preferredFilename, !preferredFilename.isEmpty {
+            resolvedFilename = preferredFilename
+        } else {
+            resolvedFilename = urlFilename.lowercased().hasSuffix(".zip")
+                ? urlFilename
+                : "browser-monitor.zip"
+        }
+        let asset = ReleaseInfo.Asset(name: resolvedFilename, downloadURL: url, size: 0)
+        let release = ReleaseInfo(
+            tagName: "direct",
+            name: "Direct ZIP download",
+            pageURL: url,
+            assets: [asset]
+        )
+
+        await download(asset: asset, from: release)
+    }
+
+    private var isBusy: Bool {
+        switch state {
+        case .resolving, .downloading:
+            true
+        case .idle, .ready, .downloaded, .failed:
+            false
+        }
+    }
+
+    private func download(asset: ReleaseInfo.Asset, from release: ReleaseInfo) async {
         state = .downloading(release)
         do {
             let (temporaryURL, _) = try await session.download(from: asset.downloadURL)

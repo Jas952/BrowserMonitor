@@ -187,7 +187,7 @@ async function setExtensionEnabled(enabled) {
       extensionEnabled: Boolean(enabled),
       extensionEnabledUpdatedAt: new Date().toISOString()
     });
-    await configureActionCount(Boolean(enabled) && blocker.contentBlockingEnabled);
+    await disableActionCount();
     await applyProtectionConfiguration(await protectionSettingsStorage());
     await syncCosmeticFilteringForAllTabs();
     return await collectSnapshot();
@@ -197,7 +197,7 @@ async function setExtensionEnabled(enabled) {
       extensionEnabled: previous,
       extensionEnabledUpdatedAt: new Date().toISOString()
     }).catch(() => {});
-    await configureActionCount(previous && blocker.contentBlockingEnabled).catch(() => {});
+    await disableActionCount().catch(() => {});
     throw error;
   }
 }
@@ -1127,7 +1127,7 @@ async function applyContentBlocking(enabled, updatedAt = new Date().toISOString(
     contentBlockingUpdatedAt: updatedAt
   });
   await applyProtectionConfiguration(await protectionSettingsStorage());
-  await configureActionCount(extensionEnabled && Boolean(enabled));
+  await disableActionCount();
   const state = await blockerStorage();
   return contentBlockingSnapshot(enabled, updatedAt, state);
 }
@@ -1457,11 +1457,11 @@ export async function collectSnapshot() {
   return snapshot;
 }
 
-async function configureActionCount(enabled = true) {
+async function disableActionCount() {
   await chrome.declarativeNetRequest.setExtensionActionOptions({
-    displayActionCountAsBadgeText: Boolean(enabled)
+    displayActionCountAsBadgeText: false
   });
-  await chrome.action.setBadgeBackgroundColor({ color: "#536b78" });
+  await chrome.action.setBadgeText({ text: "" });
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -1502,7 +1502,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   } else {
     await applyContentBlocking(current.contentBlockingEnabled, current.contentBlockingUpdatedAt);
   }
-  await configureActionCount(await extensionEnabledStorage() && (await blockerStorage()).contentBlockingEnabled);
+  await disableActionCount();
   await applyProtectionConfiguration(sanitizedInitialProtectionSettings);
   await notifyHistoryPrivacyDomainsForAllTabs();
   await chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
@@ -1512,7 +1512,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 chrome.runtime.onStartup.addListener(async () => {
   contentBlockingEnabledCached = await extensionEnabledStorage() && (await blockerStorage()).contentBlockingEnabled;
-  await configureActionCount(await extensionEnabledStorage() && (await blockerStorage()).contentBlockingEnabled);
+  await disableActionCount();
   await applyProtectionConfiguration(await protectionSettingsStorage());
   await notifyHistoryPrivacyDomainsForAllTabs();
   await chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1 });

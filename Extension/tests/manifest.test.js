@@ -8,7 +8,7 @@ test("manifest is valid Manifest V3 JSON", () => {
 
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.name, "Browser Monitor");
-  assert.equal(manifest.version, "1.1.2");
+  assert.equal(manifest.version, "1.1.3");
   assert.ok(!("key" in manifest));
   assert.equal(manifest.background.type, "module");
   assert.ok(!manifest.permissions.includes("nativeMessaging"));
@@ -36,6 +36,11 @@ test("manifest is valid Manifest V3 JSON", () => {
   assert.deepEqual(Object.keys(manifest.icons), ["16", "32", "48", "128"]);
   assert.ok(Object.values(manifest.icons).every((path) => existsSync(new URL(`../${path}`, import.meta.url))));
   assert.deepEqual(Object.keys(manifest.action.default_icon), ["16", "32"]);
+  assert.deepEqual(manifest.action.default_icon, {
+    "16": "icons/browser-monitor-toolbar-16.png",
+    "32": "icons/browser-monitor-toolbar-32.png"
+  });
+  assert.ok(Object.values(manifest.action.default_icon).every((path) => existsSync(new URL(`../${path}`, import.meta.url))));
   assert.deepEqual(manifest.options_ui, { page: "options.html", open_in_tab: true });
   assert.deepEqual(manifest.content_scripts[0].js, ["page-guard.js", "content.js"]);
   assert.ok(existsSync(new URL("../page-guard.js", import.meta.url)));
@@ -74,8 +79,16 @@ test("manifest is valid Manifest V3 JSON", () => {
     ["images/image-swap-*.svg", "icons/browser-monitor-core.svg"]
   );
   assert.ok(existsSync(new URL("../icons/browser-monitor-core.svg", import.meta.url)));
+  assert.ok(existsSync(new URL("../icons/browser-monitor-shield-48.png", import.meta.url)));
   for (const theme of ["landscape", "ocean", "minimal"]) {
     assert.ok(existsSync(new URL(`../images/image-swap-${theme}.svg`, import.meta.url)));
+  }
+});
+
+test("standalone extension pages use the exact shield header asset", () => {
+  for (const page of ["activity.html", "statistics.html", "receipt-details.html", "options.html", "feedback.html"]) {
+    const html = readFileSync(new URL(`../${page}`, import.meta.url), "utf8");
+    assert.match(html, /src="icons\/browser-monitor-shield-48\.png"/);
   }
 });
 
@@ -168,6 +181,9 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(popupCSS, /\.eco-button\s*\{[^}]*width:\s*52px/s);
   assert.match(popupCSS, /\.protection-detail\s*\{[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis/s);
   assert.match(popupCSS, /\.app-header\s*\{[^}]*padding:\s*20px 30px 17px 20px/s);
+  assert.match(popupCSS, /\.app-header\s*\{[^}]*gap:\s*8px/s);
+  assert.match(popupCSS, /\.brand-icon\s*\{[^}]*width:\s*40px[^}]*height:\s*40px/s);
+  assert.doesNotMatch(popupCSS, /\.brand-icon\s*\{[^}]*(?:opacity|filter):/s);
   assert.match(
     popupCSS,
     /\.preload \.toggle-control input\s*\{[^}]*visibility:\s*hidden/s,
@@ -215,7 +231,9 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(serviceWorker, /CONTINUE_WATCHING_KEY/);
   assert.match(serviceWorker, /getContinueWatchingList/);
   assert.match(serviceWorker, /mediaType/);
-  assert.match(serviceWorker, /displayActionCountAsBadgeText:\s*Boolean\(enabled\)/);
+  assert.match(serviceWorker, /displayActionCountAsBadgeText:\s*false/);
+  assert.match(serviceWorker, /chrome\.action\.setBadgeText\(\{ text: "" \}\)/);
+  assert.doesNotMatch(serviceWorker, /setBadgeBackgroundColor/);
   assert.match(serviceWorker, /const previous = await extensionEnabledStorage\(\)/);
   assert.match(popupHTML, /id="statistics-button"/);
   assert.match(popupJS, /statistics\.html/);

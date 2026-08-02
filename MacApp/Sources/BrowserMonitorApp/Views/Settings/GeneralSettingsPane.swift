@@ -2,7 +2,6 @@ import AppKit
 import SwiftUI
 
 struct GeneralSettingsPane: View {
-    @EnvironmentObject private var appState: AppState
     @AppStorage("automaticallyRevealDownload") private var automaticallyRevealDownload = true
 
     var body: some View {
@@ -10,18 +9,6 @@ struct GeneralSettingsPane: View {
             Section("Installation") {
                 Toggle("Reveal downloaded ZIP in Finder", isOn: $automaticallyRevealDownload)
                 Text("ZIP files are saved to the standard Downloads folder.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Introduction") {
-                LabeledContent("Interactive tour") {
-                    Button("Replay Intro") {
-                        appState.presentOnboarding()
-                        NSApp.keyWindow?.close()
-                    }
-                }
-                Text("The tour is also available from the main window and application menu.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

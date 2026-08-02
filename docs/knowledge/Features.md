@@ -17,8 +17,8 @@ Only implemented user-facing capabilities are listed here.
 | Site Activity | Tab activity explanation and a map of recent cross-domain redirects. |
 | Tab tools | Duplicate-tab detection and closing, plus a configurable popup tool order. |
 | Feedback | Direct feedback request form via a configured Cloudflare endpoint after explicit user action. |
-| Interface | Popup, Settings, Statistics, Activity, and warning pages in English and Russian. Statistics and Activity reuse one dedicated window each; other extension pages reuse browser tabs. |
-| macOS companion | Compact Chrome/Edge/Safari picker with platform badges, card-attached install choices, separate fullscreen media tour with nested slides, replayable onboarding, and General/About settings with project and GitHub Star guidance. |
+| Interface | Popup, Settings, Statistics, Activity, and warning pages in English and Russian, with a shared muted blue-gray shield identity across Chrome, GitHub media, and the companion app. Chrome's compact toolbar and standalone data/settings page headers use the same undistorted shield cut directly from the full app icon, without a numeric badge or color filters; store and popup surfaces retain the complete window-and-shield mark. Statistics and Activity reuse one dedicated window each; other extension pages reuse browser tabs. |
+| macOS companion | Compact catalog-driven Chrome/Edge/Safari picker with the shared project icon, platform badges and per-browser store/ZIP destinations, a visually connected selection marker, a card-attached install panel with a softly fading arrow outline, a native Settings-sized two-page guide using unclipped interface captures, aligned General/About settings with project and GitHub Star guidance, and EdDSA-verified Sparkle updates from GitHub releases through a compact version-adjacent control. |
 
 ## Main limitations
 

@@ -22,6 +22,7 @@ Use `MAJOR.MINOR.PATCH`:
 Before release, use one version in:
 
 - `Extension/manifest.json`;
+- the macOS companion bundle produced from the release tag;
 - the README badge and ZIP name in installation instructions;
 - `docs/knowledge/Product.md`;
 - Git tag `vX.Y.Z`;
@@ -87,6 +88,13 @@ The README describes the current stable product:
 
 The README must not become a changelog. Update obsolete capabilities and old ZIP versions with each release.
 
+## Brand assets
+
+- `store-assets/browser-monitor-icon-source.png` is the full-resolution transparent source.
+- `store-assets/browser-monitor-icon-master-1024.png` is the portable 1024×1024 master.
+- `store-assets/browser-monitor-chrome-web-store-128.png` is the review-ready store icon: 128×128 PNG with 96×96 artwork and 16 px transparent padding on each side.
+- README and repository imagery in `docs/readme-media/` must use the same current icon as the extension and macOS companion.
+
 ## Repository settings
 
 Current repository settings should support a public, local-first Chrome extension without requiring a website.
@@ -123,7 +131,10 @@ Settings to leave empty or disabled for now:
 8. Push changes to GitHub and confirm that the release commit is on the main branch.
 9. Create tag `vX.Y.Z`.
 10. Create the GitHub Release and attach the ZIP and `SHA256SUMS.txt`.
-11. Verify the published page, text, tag, and both asset downloads.
+11. Attach `BrowserMonitor.dmg`, generate its EdDSA-signed Sparkle appcast entry, and publish `appcast.xml` on `main`.
+12. Verify the published page, text, tag, extension ZIP, macOS DMG, checksums, and appcast download.
+
+The release workflow requires `SPARKLE_PRIVATE_KEY` in GitHub Actions secrets. Its matching public key is embedded in the companion app; never commit or print the private key. Each release tag must produce a strictly increasing macOS `CFBundleVersion`, and the app must be copied to a writable location such as `/Applications` before self-update. The current ad-hoc distribution still shows Gatekeeper's unknown-developer warning on first install; Sparkle's EdDSA verification secures later update packages but does not replace Developer ID signing or notarization.
 
 ## Prohibited actions
 
