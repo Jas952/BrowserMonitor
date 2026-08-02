@@ -35,6 +35,33 @@ final class UpdateService: NSObject, ObservableObject, SPUUpdaterDelegate {
         }
     }
 
+    enum ManualCheckCompletion: Equatable {
+        case noUpdate
+        case failed(String)
+    }
+
+    struct ManualCheckPresentation: Equatable {
+        let status: Status
+        let notice: String
+    }
+
+    enum FeedPreflightError: LocalizedError {
+        case missingFeedURL
+        case invalidResponse
+        case httpStatus(Int)
+
+        var errorDescription: String? {
+            switch self {
+            case .missingFeedURL:
+                "The update feed is not configured."
+            case .invalidResponse:
+                "The update feed returned an invalid response."
+            case .httpStatus(let statusCode):
+                "The update server returned HTTP \(statusCode)."
+            }
+        }
+    }
+
     @Published private(set) var status: Status = .idle
     @Published private(set) var canCheckForUpdates = false
     @Published private(set) var notice: String?
@@ -76,7 +103,7 @@ final class UpdateService: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     func checkForUpdates() {
         guard canCheckForUpdates else {
-            presentNoUpdatesNotice()
+            completeManualCheck(.failed("The update checker is not ready."))
             return
         }
 
@@ -93,35 +120,17 @@ final class UpdateService: NSObject, ObservableObject, SPUUpdaterDelegate {
     }
 
     private func startManualCheckWhenFeedIsAvailable() async {
-        guard let feedURL = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
-              let url = URL(string: feedURL) else {
-            manualCheckInProgress = false
-            presentNoUpdatesNotice()
-            return
-        }
-
         do {
+            let feedURL = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
+            let url = try Self.feedURL(from: feedURL)
             var request = URLRequest(url: url)
             request.cachePolicy = .reloadIgnoringLocalCacheData
             request.timeoutInterval = 12
             let (_, response) = try await URLSession.shared.data(for: request)
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                manualCheckInProgress = false
-                presentNoUpdatesNotice()
-                return
-            }
-
-            guard (200..<300).contains(httpResponse.statusCode) else {
-                manualCheckInProgress = false
-                presentNoUpdatesNotice()
-                return
-            }
-
+            try Self.validateFeedResponse(response)
             controller.updater.checkForUpdates()
         } catch {
-            manualCheckInProgress = false
-            presentNoUpdatesNotice()
+            completeManualCheck(Self.failureCompletion(for: error))
         }
     }
 
@@ -134,16 +143,12 @@ final class UpdateService: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: Error) {
         guard manualCheckInProgress else { return }
-        manualCheckInProgress = false
-        status = .upToDate
-        scheduleIdleStatus()
+        completeManualCheck(.noUpdate)
     }
 
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
         guard manualCheckInProgress else { return }
-        manualCheckInProgress = false
-        status = .failed(error.localizedDescription)
-        scheduleIdleStatus()
+        completeManualCheck(Self.failureCompletion(for: error))
     }
 
     private func scheduleIdleStatus() {
@@ -155,10 +160,41 @@ final class UpdateService: NSObject, ObservableObject, SPUUpdaterDelegate {
         }
     }
 
-    private func presentNoUpdatesNotice() {
-        notice = "No updates available."
-        status = .upToDate
+    private func completeManualCheck(_ completion: ManualCheckCompletion) {
+        let presentation = Self.presentation(for: completion)
+        manualCheckInProgress = false
+        status = presentation.status
+        notice = presentation.notice
         scheduleIdleStatus()
+    }
+
+    nonisolated static func feedURL(from value: String?) throws -> URL {
+        guard let value, let url = URL(string: value) else {
+            throw FeedPreflightError.missingFeedURL
+        }
+        return url
+    }
+
+    nonisolated static func validateFeedResponse(_ response: URLResponse) throws {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw FeedPreflightError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw FeedPreflightError.httpStatus(httpResponse.statusCode)
+        }
+    }
+
+    nonisolated static func failureCompletion(for error: Error) -> ManualCheckCompletion {
+        .failed("Unable to check for updates. \(error.localizedDescription)")
+    }
+
+    nonisolated static func presentation(for completion: ManualCheckCompletion) -> ManualCheckPresentation {
+        switch completion {
+        case .noUpdate:
+            ManualCheckPresentation(status: .upToDate, notice: "No updates available.")
+        case .failed(let message):
+            ManualCheckPresentation(status: .failed(message), notice: message)
+        }
     }
 
     nonisolated static func compareVersions(_ lhs: String, _ rhs: String) -> ComparisonResult {
