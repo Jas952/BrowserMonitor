@@ -90,10 +90,11 @@ The README must not become a changelog. Update obsolete capabilities and old ZIP
 
 ## Brand assets
 
-- `store-assets/browser-monitor-icon-source.png` is the full-resolution transparent source.
-- `store-assets/browser-monitor-icon-master-1024.png` is the portable 1024×1024 master.
-- `store-assets/browser-monitor-chrome-web-store-128.png` is the review-ready store icon: 128×128 PNG with 96×96 artwork and 16 px transparent padding on each side.
+- Extension icons live in `Extension/icons/`.
+- macOS companion imagery lives in `MacApp/Sources/BrowserMonitorApp/Resources/`.
 - README and repository imagery in `docs/readme-media/` must use the same current icon as the extension and macOS companion.
+- Chrome Web Store submission screenshots, promotional images, and store-only
+  icon exports stay local and are ignored by Git.
 
 ## Repository settings
 

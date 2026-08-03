@@ -32,6 +32,10 @@ Screenshot *.png
 # Local media captures
 *.mp4
 
+# Chrome Web Store submission media
+store-assets/
+store-listing/
+
 # Secrets and local environment
 .env
 .env.*
