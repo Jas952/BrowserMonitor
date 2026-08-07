@@ -8,34 +8,28 @@
 
 <style>
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-    max-width: 900px;
-    margin: 40px auto;
-    padding: 0 24px;
-    line-height: 1.65;
-    color: #222;
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+max-width:900px;
+margin:40px auto;
+padding:0 24px;
+line-height:1.65;
+color:#222;
 }
 
 h1 {
-    font-size: 34px;
-    margin-bottom: 5px;
+font-size:34px;
 }
 
 h2 {
-    margin-top: 35px;
-    font-size: 24px;
+margin-top:35px;
 }
 
 h3 {
-    margin-top: 25px;
+margin-top:25px;
 }
 
 .updated {
-    color: #666;
-}
-
-li {
-    margin-bottom: 8px;
+color:#666;
 }
 </style>
 
@@ -58,252 +52,267 @@ browser security, privacy and browsing experience.
 </p>
 
 <p>
-The extension provides features including advertisement blocking, tracker
-protection, distraction control, cookie banner management, custom element
-controls and other browser protection tools.
+The extension provides tools for:
 </p>
+
+<ul>
+<li>advertisement and tracker blocking;</li>
+<li>privacy protection;</li>
+<li>security checks;</li>
+<li>cookie banner control;</li>
+<li>custom filtering;</li>
+<li>browser optimization features.</li>
+</ul>
+
 
 <p>
-Browser Monitor follows a local-first approach. Most processing is performed
-directly inside the user's browser and browsing data is not collected for
-advertising or tracking purposes.
+Browser Monitor follows a local-first approach. Most processing happens
+directly inside the user's browser and personal data is not collected for
+advertising or user tracking.
 </p>
 
 
-<h2>2. Information Processed by Browser Monitor</h2>
+<h2>2. Data Processing</h2>
+
 
 <h3>Website URLs and Domains</h3>
 
 <p>
-Browser Monitor may access website URLs and domains to provide security and
-content filtering features.
+Browser Monitor processes website URLs and domains to provide security and
+privacy features.
 </p>
 
 <p>
-This access is required for features such as:</p>
+This includes:
+</p>
 
 <ul>
-<li>blocking advertisements and trackers;</li>
-<li>applying filtering rules;</li>
-<li>detecting unwanted or suspicious resources;</li>
-<li>providing user-enabled website protection features.</li>
+<li>blocking unwanted requests;</li>
+<li>detecting suspicious domains;</li>
+<li>checking navigation safety;</li>
+<li>applying filtering rules.</li>
 </ul>
 
 <p>
-Website information is processed locally whenever possible and is not stored
-on external servers for advertising, analytics or user profiling.
+Website information is processed locally and is not used to create advertising
+profiles.
 </p>
 
 
 <h3>Browser Tabs</h3>
 
 <p>
-Browser Monitor may access information about currently opened browser tabs,
-including tab URLs and tab state.
+Browser Monitor may access currently opened tabs and their URLs.
 </p>
 
 <p>
-This permission is required to provide browser monitoring features and
-user-requested protection tools.
+This permission is required for:
 </p>
 
+<ul>
+<li>browser monitoring;</li>
+<li>security analysis;</li>
+<li>page protection features;</li>
+<li>user interface statistics.</li>
+</ul>
+
 <p>
-Browser Monitor does not create browsing profiles, sell browsing activity, or
-use browsing information for advertising purposes.
+Browsing activity is not sold, shared with advertisers, or used for tracking.
 </p>
 
 
 <h3>Network Requests</h3>
 
 <p>
-Browser Monitor uses Chrome's Declarative Net Request API to process browser
-network requests locally.
+Browser Monitor uses Chrome's Declarative Net Request API and web request
+features to analyze and block unwanted network activity.
 </p>
 
 <p>
-This functionality is used for:</p>
+This includes:
+</p>
 
 <ul>
-<li>blocking advertisements;</li>
-<li>blocking known trackers;</li>
-<li>applying EasyList, EasyPrivacy and other filtering rules;</li>
-<li>improving browsing privacy and security.</li>
+<li>advertisements;</li>
+<li>trackers;</li>
+<li>cryptocurrency mining scripts;</li>
+<li>unwanted resources.</li>
 </ul>
 
-
-<h3>Local Storage</h3>
-
 <p>
-Browser Monitor uses Chrome storage features to save user preferences,
-settings and enabled features.
-</p>
-
-<p>
-This information remains stored locally in the user's browser profile.
+Filtering is performed locally in the browser.
 </p>
 
 
-<h2>3. Browser Permissions Usage</h2>
-
-<h3>Website Access</h3>
+<h2>3. Local Storage</h2>
 
 <p>
-Browser Monitor requires access to websites in order to inject security and
-filtering scripts, modify page elements according to user settings and provide
-content protection features.
+Browser Monitor stores settings and local information using Chrome Storage API.
 </p>
 
-
-<h3>Tabs Permission</h3>
-
 <p>
-Used to analyze active browser tabs and provide browser monitoring features.
-The extension does not upload browsing history or visited websites.
+Stored information may include:
 </p>
 
-
-<h3>Declarative Net Request</h3>
-
-<p>
-Used to block unwanted network requests, advertisements and trackers directly
-inside the browser.
-</p>
-
-
-<h3>Storage</h3>
+<ul>
+<li>extension preferences;</li>
+<li>enabled protection settings;</li>
+<li>filter configuration;</li>
+<li>local statistics;</li>
+<li>user-created rules.</li>
+</ul>
 
 <p>
-Used to save extension configuration and user preferences.
+This data remains on the user's device.
 </p>
 
 
 <h2>4. Optional Permissions</h2>
 
 <p>
-Some Browser Monitor features require additional permissions. These permissions
-are optional and requested only when a user enables a related feature.
+Some features require additional permissions. These permissions are optional
+and requested only when the user enables related functionality.
 </p>
 
-<ul>
 
-<li>
-<strong>History:</strong> Used only for optional history-related features.
-</li>
+<h3>History</h3>
 
-<li>
-<strong>Cookies:</strong> Used only for optional cookie management features.
-</li>
+<p>
+If enabled by the user, Browser Monitor can access and remove selected history
+entries for privacy management features.
+</p>
 
-<li>
-<strong>Browsing Data:</strong> Used only for optional browser data cleanup
-features.
-</li>
 
-<li>
-<strong>Downloads:</strong> Used only for optional download management features.
-</li>
+<h3>Cookies</h3>
 
-<li>
-<strong>Clipboard:</strong> Used only for optional clipboard-related security
-features.
-</li>
+<p>
+If enabled by the user, Browser Monitor can access cookies for cookie
+management and export features.
+</p>
 
-</ul>
+
+<h3>Browsing Data</h3>
+
+<p>
+If enabled by the user, Browser Monitor can remove selected browser data such
+as cookies, local storage and cached website data.
+</p>
+
+
+<h3>Downloads</h3>
+
+<p>
+Used only when the user exports browser data, such as cookies, through an
+explicit action.
+</p>
+
+
+<h3>Clipboard Security</h3>
+
+<p>
+The Crypto Guard feature may temporarily process a cryptographic fingerprint of
+copied cryptocurrency addresses to detect clipboard replacement attacks.
+</p>
+
+<p>
+The extension does not store the original copied address.
+</p>
 
 
 <h2>5. Third-Party Services</h2>
-
-<p>
-Some optional features may communicate with external services.
-</p>
 
 
 <h3>SponsorBlock API</h3>
 
 <p>
-Browser Monitor may use SponsorBlock services to provide community-generated
-video segment information.
+Browser Monitor may communicate with SponsorBlock API to retrieve
+community-provided video segment information.
 </p>
 
 <p>
-This service is used only for the requested functionality and is not used for
-advertising or user tracking.
+Only the information required for this feature is requested.
 </p>
 
 
-<h3>Feedback Services</h3>
+<h3>User-Provided Filter Lists</h3>
 
 <p>
-If a user voluntarily submits feedback, technical information required to
-process the request may be transmitted.
+Users may optionally add external HTTPS filter lists.
 </p>
 
 <p>
-Submitting feedback is optional.
+These lists are downloaded only to provide the filtering functionality chosen
+by the user.
 </p>
 
 
 <h2>6. Data Collection and Sharing</h2>
 
 <p>
-Browser Monitor does not:</p>
+Browser Monitor does not:
+</p>
 
 <ul>
-<li>sell user data;</li>
-<li>rent user data;</li>
-<li>share personal information with advertisers;</li>
-<li>create advertising profiles;</li>
+<li>sell personal data;</li>
+<li>share browsing history with advertisers;</li>
+<li>create user profiles;</li>
 <li>track users across websites.</li>
 </ul>
 
 
 <p>
-Data is only transmitted when:</p>
+Information leaves the device only when:
+</p>
 
 <ul>
-<li>a user explicitly enables a feature requiring an external service;</li>
-<li>a user voluntarily submits feedback.</li>
+<li>the user enables a feature requiring an external service;</li>
+<li>the user manually submits feedback;</li>
+<li>the user adds an external filter source.</li>
 </ul>
 
 
-<h2>7. Security and Privacy Features</h2>
+<h2>7. Security Features</h2>
 
 <p>
-Browser Monitor analyzes websites and browser activity only to provide
-security, privacy and customization features requested by the user.
+Browser Monitor analyzes website activity only to provide security, privacy
+and customization features requested by the user.
 </p>
 
 <p>
-The extension does not collect passwords, payment information, personal
-messages or private communications.
+The extension does not collect:
 </p>
+
+<ul>
+<li>passwords;</li>
+<li>payment information;</li>
+<li>personal messages;</li>
+<li>emails;</li>
+<li>private files.</li>
+</ul>
 
 
 <h2>8. User Control</h2>
 
 <p>
-Users can disable individual features, remove optional permissions or uninstall
-Browser Monitor at any time through Chrome browser settings.
+Users can disable features, remove optional permissions or uninstall Browser
+Monitor at any time through Chrome settings.
 </p>
 
 
-<h2>9. Changes to This Privacy Policy</h2>
+<h2>9. Changes</h2>
 
 <p>
-This privacy policy may be updated when Browser Monitor receives new features
-or functionality changes.
+This privacy policy may be updated when Browser Monitor functionality changes.
 </p>
 
 
 <h2>10. Contact</h2>
 
 <p>
-For questions regarding this privacy policy, please contact:
+GitHub repository:
 </p>
 
 <p>
-GitHub repository:
-<br>
 <a href="https://github.com/Jas952/BrowserMonitor">
 https://github.com/Jas952/BrowserMonitor
 </a>
