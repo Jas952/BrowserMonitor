@@ -1,93 +1,199 @@
 # Browser Monitor Privacy Policy
 
-Effective date: July 27, 2026
+Last updated: August 2026
 
-Browser Monitor is a local-first Chrome extension for safer browsing, reducing page distractions, and understanding browser activity. It has no developer-operated analytics service, advertising service, account system, or remote database.
+## 1. Overview
 
-## Data Processed Locally
+Browser Monitor is a privacy-focused Chrome extension designed to improve browser security, privacy, and browsing experience.
 
-Browser Monitor processes data inside the user's Chrome profile to provide visible extension features:
+The extension provides tools for:
 
-- open-tab titles, URLs, activity state, audio state, and local Web Performance measurements;
-- locally available favicons and compact per-domain active-visit counters;
-- extension settings, site exceptions, temporary pauses, user-created blocking rules, and user-selected filter-list URLs;
-- Link Safety settings, allowed domains, blocked domains, warning counters, and recent redirect chains;
-- Search protection labels and local allowlist decisions;
-- History filter settings and domains selected by the user for local history cleanup;
-- custom Image Swap files selected by the user;
-- cookie names and values only after the user explicitly opens the Cookies tool;
-- page elements selected by the user with the element picker;
-- compact seven-day blocking counters containing site domains, blocked resource domains, and event categories;
-- compact 90-day activity counters containing only domains, visits, active seconds, video seconds, and reading seconds;
-- video resume records for supported long-form videos, with sanitized URLs and media identity data;
-- Crypto Guard address fingerprints for short-lived copy/paste verification;
-- privacy receipt data assembled locally for the current site;
-- feedback drafts containing the email address, request text, status, and an optional screenshot selected by the user.
+- advertisement and tracker blocking;
+- privacy protection;
+- security checks;
+- cookie banner control;
+- custom filtering;
+- browser optimization features.
 
-This data is used only to show protection state, explain tab activity, provide local analytics, apply user settings, warn before suspicious link transitions, clean selected local history entries after user permission, export data requested by the user, and restore settings later.
-
-## Storage and Retention
-
-Settings, the latest tab snapshot, site exceptions, Link Safety domains, History filter domains, custom rules, and custom images are stored in `chrome.storage.local`. They remain until the user changes or resets them, uninstalls the extension, or clears extension storage.
-
-Blocking and warning statistics are limited to seven local calendar days. Site activity counters are limited to 90 local calendar days. Video resume records are limited to 100 entries and no longer than 90 days. Redirect chains are limited to 100 entries and no longer than 30 days. Crypto Guard stores only an address SHA-256 fingerprint for up to five minutes.
-
-Full page URLs, page titles, and page text are not stored in site activity analytics. Full URLs are used only where a feature explicitly needs to return to a page or prepare a user-requested report, and known tracking or session parameters are removed.
-
-Feedback drafts are limited to the 20 most recent entries and 6 MB in total. They remain local until extension storage is cleared or the extension is uninstalled. A full page URL and limited protection diagnostics are included only when the user explicitly chooses to report filter problems on the current site. When the user selects Send, the extension sends the reply email address, request text, extension version, optional site-report details, and an optional user-selected screenshot to the Browser Monitor feedback endpoint. The endpoint is hosted on Cloudflare Workers and forwards the request through the configured email provider. The Worker does not use a database or retain a separate copy of the request.
-
-Cookie values are not added to analytics, settings backups, or extension storage. A cookie export is created only after a direct user action and is saved or copied to the destination chosen by that user. Exported cookie files can grant access to signed-in accounts and must be kept private.
-
-## Network Activity
-
-Browser Monitor does not transmit browsing history, tab analytics, Link Safety checks, History filter domains, cookies, custom images, settings, or user-created rules to the developer or to analytics providers.
-
-When the user explicitly selects Send in the feedback form, Chrome connects to the Browser Monitor feedback endpoint hosted on Cloudflare Workers. The endpoint receives only the fields shown or described in the form: reply email address, request text, extension version, optional current-site report details, limited protection settings used for diagnostics, and an optional screenshot selected by the user. Cloudflare and the configured email provider may receive ordinary connection and delivery information. Browser Monitor does not send feedback data before this explicit action.
-
-If the user explicitly adds a custom HTTPS filter-list URL, Chrome contacts that address to download the list. The operator of that address may receive ordinary request information such as the user's IP address and user agent. Browser Monitor accepts only bounded filter data and does not send browsing history or cookies with that request.
-
-When sponsored-segment skipping is enabled and the user opens a YouTube video, Browser Monitor contacts the public SponsorBlock API operated at `sponsor.ajay.app`. It sends a four-character prefix of the SHA-256 hash of the video ID and the requested `sponsor` / `selfpromo` categories. It does not send the full video ID, page URL, cookies, tab title, or local statistics. Like any network service, the API operator can receive ordinary connection information such as the user's IP address and user agent.
-
-## Sharing and Selling Data
-
-Browser Monitor does not sell user data, use it for advertising or credit decisions, or share it with data brokers. Local extension data is not available to the developer. Feedback content is delivered to the developer only after the user explicitly submits the form. Third-party network interactions are limited to user-configured HTTPS filter-list downloads, the optional SponsorBlock lookup, and explicit feedback delivery through Cloudflare Workers and the configured email provider as described above.
-
-## Permissions
-
-Required permissions are used for local tab and foreground activity analysis, declarative blocking, settings storage, page controls, alarms, context menus, locally available site icons, and local request diagnostics. The `webRequest` permission observes request metadata needed for local counters and redirect diagnostics; response bodies and request content are not read.
-
-Cookies, downloads, clipboard access, browsing data cleanup, and history access are optional permissions requested only when the user invokes the corresponding tool. The optional `history` permission is used only to delete local Chrome history entries matching domains the user added to the History filter; activity analytics does not read Chrome History.
-
-## Chrome Web Store Limited Use
-
-The use of information received from Google APIs will adhere to the Chrome Web Store User Data Policy, including the Limited Use requirements.
-
-## User Control
-
-Users can pause protection, exclude sites, disable tab analysis, remove custom images and rules, clear statistics, reset all settings, revoke optional permissions in Chrome, or uninstall the extension at any time.
-
-## Changes and Contact
-
-Material changes to these practices will be reflected in this document and, where required, disclosed in the extension before the changed data use begins. Support requests can be sent through the feedback form or by email to `darktmonth@gmail.com`.
+Browser Monitor follows a local-first approach. Most processing happens directly inside the user's browser, and personal data is not collected for advertising or user tracking.
 
 ---
 
-# Политика конфиденциальности Browser Monitor
+## 2. Data Processing
 
-Дата вступления в силу: 27 июля 2026 года
+### Website URLs and Domains
 
-Browser Monitor — локальное расширение Chrome для более безопасного браузинга, уменьшения помех на страницах и понимания активности браузера. У расширения нет сервера аналитики разработчика, рекламной системы, аккаунтов или удалённой базы данных.
+Browser Monitor processes website URLs and domains to provide security and privacy features.
 
-Расширение локально обрабатывает названия и URL открытых вкладок, favicon, состояние активности и звука, показатели Web Performance, настройки защиты, исключения, временные паузы, пользовательские правила, настройки Link Safety, Search protection, History filter, выбранные изображения, данные privacy receipt, compact redirect chains, короткоживущие fingerprints Crypto Guard и компактную статистику по доменам. Полные URL, заголовки и текст страниц не записываются в аналитику посещений.
+This includes:
 
-Данные хранятся в профиле Chrome до изменения или сброса настроек, очистки хранилища либо удаления расширения. Статистика блокировок ограничена семью днями, аналитика посещений — 90 днями, записи продолжения просмотра — 100 записями и 90 днями, redirect chains — 100 записями и 30 днями, Crypto Guard fingerprints — пятью минутами.
+- blocking unwanted requests;
+- detecting suspicious domains;
+- checking navigation safety;
+- applying filtering rules.
 
-Черновики обратной связи содержат указанную пользователем почту, текст, статус и необязательный screenshot. Быстрый репорт фильтров дополнительно включает явно выбранный пользователем URL страницы и ограниченную диагностику настроек защиты. Хранятся не более 20 последних записей и не более 6 МБ суммарно. Только после нажатия Send расширение отправляет эти данные и выбранный пользователем screenshot в endpoint Browser Monitor на Cloudflare Workers. Worker передаёт обращение через настроенного поставщика электронной почты, не использует базу данных и не хранит отдельную копию обращения. Cloudflare и поставщик электронной почты могут получать обычные технические сведения о соединении и доставке.
+Website information is processed locally and is not used to create advertising profiles.
 
-Browser Monitor не продаёт историю, аналитику вкладок, cookies, изображения или настройки, не использует их для рекламы и не передаёт брокерам данных. Локальные данные расширения недоступны разработчику. Содержимое обращения получает разработчик только после явной отправки формы пользователем. Проверка подозрительных ссылок и результатов поиска выполняется локально и не отправляет URL на внешний reputation-сервис.
+---
 
-При добавлении собственного HTTPS-списка фильтров Chrome обращается непосредственно к указанному пользователем адресу. Если включён SponsorBlock и открыто видео YouTube, Browser Monitor обращается к публичному API `sponsor.ajay.app`, передавая только четыре символа SHA-256 от ID видео и категории `sponsor` / `selfpromo`.
+### Browser Tabs
 
-Обязательные разрешения используются для локального анализа вкладок, блокировки, настроек, управления страницами, alarms, контекстного меню, favicon и локальной диагностики запросов. Cookies, загрузки, буфер обмена, browsing data cleanup и история запрашиваются как дополнительные разрешения только при запуске соответствующего инструмента. Пользователь может отключить анализ, исключить сайт, очистить статистику, сбросить данные, отозвать разрешения или удалить расширение в любое время.
+Browser Monitor may access currently opened tabs and their URLs.
 
-Использование информации, полученной через API Google, соответствует Chrome Web Store User Data Policy и требованиям Limited Use.
+This permission is required for:
+
+- browser monitoring;
+- security analysis;
+- page protection features;
+- user interface statistics.
+
+Browser Monitor does not sell, share, or use browsing activity for advertising purposes.
+
+---
+
+### Network Requests
+
+Browser Monitor uses Chrome's Declarative Net Request API and web request features to analyze and block unwanted network activity.
+
+This includes:
+
+- advertisements;
+- trackers;
+- cryptocurrency mining scripts;
+- unwanted resources.
+
+Filtering is performed locally in the browser.
+
+---
+
+## 3. Local Storage
+
+Browser Monitor stores settings and local information using Chrome Storage API.
+
+Stored information may include:
+
+- extension preferences;
+- enabled protection settings;
+- filter configuration;
+- local statistics;
+- user-created rules.
+
+This data remains stored on the user's device.
+
+---
+
+## 4. Optional Permissions
+
+Some Browser Monitor features require additional permissions. These permissions are optional and requested only when the user enables related functionality.
+
+### History
+
+If enabled by the user, Browser Monitor can access and remove selected history entries for privacy management features.
+
+---
+
+### Cookies
+
+If enabled by the user, Browser Monitor can access cookies for cookie management and export features.
+
+---
+
+### Browsing Data
+
+If enabled by the user, Browser Monitor can remove selected browser data such as cookies, local storage, and cached website data.
+
+---
+
+### Downloads
+
+Used only when the user exports browser data, such as cookies, through an explicit action.
+
+---
+
+### Clipboard Security
+
+The Crypto Guard feature may temporarily process a cryptographic fingerprint of copied cryptocurrency addresses to detect clipboard replacement attacks.
+
+The extension does not store the original copied address.
+
+---
+
+## 5. Third-Party Services
+
+Some optional features may communicate with external services.
+
+### SponsorBlock API
+
+Browser Monitor may communicate with SponsorBlock API to retrieve community-provided video segment information.
+
+Only the information required for this feature is requested.
+
+SponsorBlock is not used for advertising, analytics, or user tracking.
+
+---
+
+### User-Provided Filter Lists
+
+Users may optionally add external HTTPS filter lists.
+
+These lists are downloaded only to provide the filtering functionality chosen by the user.
+
+---
+
+## 6. Data Collection and Sharing
+
+Browser Monitor does not:
+
+- sell personal data;
+- share browsing history with advertisers;
+- create user profiles;
+- track users across websites.
+
+Information leaves the device only when:
+
+- the user enables a feature requiring an external service;
+- the user manually submits feedback;
+- the user adds an external filter source.
+
+---
+
+## 7. Security Features
+
+Browser Monitor analyzes website activity only to provide security, privacy, and customization features requested by the user.
+
+The extension does not collect:
+
+- passwords;
+- payment information;
+- personal messages;
+- emails;
+- private files.
+
+---
+
+## 8. User Control
+
+Users can:
+
+- disable features;
+- remove optional permissions;
+- clear extension data;
+- uninstall Browser Monitor at any time through Chrome settings.
+
+---
+
+## 9. Changes to This Privacy Policy
+
+This privacy policy may be updated when Browser Monitor functionality changes.
+
+The latest version will always be available through the official Browser Monitor privacy policy page.
+
+---
+
+## 10. Contact
+
+For questions regarding this privacy policy:
+
+GitHub repository:
+
+https://github.com/Jas952/BrowserMonitor
