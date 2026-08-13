@@ -24,6 +24,11 @@ AGENTS.md
 .jcodemunch.jsonc
 .no-mistakes.yaml
 
+# Local development and repository-maintenance material
+.github/
+script/
+docs/knowledge/
+
 # Editor and operating-system files
 .DS_Store
 *.xcuserstate

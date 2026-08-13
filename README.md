@@ -68,29 +68,6 @@ The companion requires macOS 14 or later. Because the current DMG is not Develop
 
 All tab measurements and settings remain in the local Chrome profile. Cookies, downloads, and clipboard access are requested only when the related tool is used. See the [privacy policy](./docs/PrivacyPolicy.md) for details.
 
-## Repository layout
-
-| Path | Purpose |
-| --- | --- |
-| `Extension/` | Chrome Manifest V3 extension and its Node test suite. |
-| `MacApp/` | Native macOS 14+ SwiftUI companion, resources, and Swift tests. |
-| `cloudflare/feedback-worker/` | Optional feedback delivery service. It is deployed separately and is not included in the extension package. |
-| `script/` | Maintained release, filter-list, and local macOS build tools. |
-| `docs/` | Privacy policy, release guidance, product notes, and repository media. |
-
-The Chrome Web Store upload is built from an explicit allowlist and contains only extension runtime files:
-
-```bash
-node script/build_release.mjs
-```
-
-For local verification:
-
-```bash
-npm --prefix Extension test
-swift test --package-path MacApp
-```
-
 ## Companion to MacCleaner
 
 <table>
