@@ -82,7 +82,7 @@ The README describes the current stable product:
 - main user capabilities;
 - local-first and privacy position;
 - current version;
-- installation of the latest ZIP;
+- installation from the Chrome Web Store as the primary path, with the latest ZIP as the manual-installation fallback;
 - link to the latest GitHub Release;
 - contact details and related projects.
 
@@ -113,6 +113,7 @@ Recommended repository metadata:
 - Description: `Local-first Chrome extension for ad blocking, link protection, tab activity monitoring and browser privacy tools`.
 - Topics: `chrome-extension`, `manifest-v3`, `privacy`, `browser-security`, `ad-blocker`, `tracker-blocker`, `phishing-protection`, `tab-monitoring`, `sponsorblock`, `javascript`.
 - Social preview: use a product image from `docs/readme-media/` or a dedicated preview image that clearly shows Browser Monitor rather than a generic graphic.
+- Chrome Web Store: `https://chromewebstore.google.com/detail/browser-monitor/fgpfbdfacppnhcmjkgnknjhahngealoa`.
 
 Settings to leave empty or disabled for now:
 

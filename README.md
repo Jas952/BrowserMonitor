@@ -13,6 +13,9 @@
 </p>
 
 <p align="center">
+  <a href="https://chromewebstore.google.com/detail/browser-monitor/fgpfbdfacppnhcmjkgnknjhahngealoa">
+    <img src="https://img.shields.io/badge/Install-Chrome_Web_Store-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Install Browser Monitor from the Chrome Web Store" />
+  </a>
   <a href="https://github.com/Jas952/BrowserMonitor/releases/latest">
     <img src="https://img.shields.io/badge/Download-Latest_Release-2F8177?style=for-the-badge&logo=github&logoColor=white" alt="Download the latest Browser Monitor release" />
   </a>
@@ -47,10 +50,13 @@ Browser Monitor is a local-first Chrome extension that combines content protecti
 
 ### Chrome extension
 
+Install Browser Monitor directly from the [Chrome Web Store](https://chromewebstore.google.com/detail/browser-monitor/fgpfbdfacppnhcmjkgnknjhahngealoa), then pin it to the Chrome toolbar.
+
+For manual installation or development:
+
 1. Download `browser-monitor-1.1.3.zip` from the [latest release](https://github.com/Jas952/BrowserMonitor/releases/latest) and extract it.
 2. Open `chrome://extensions` and enable **Developer mode**.
 3. Select **Load unpacked** and choose the extracted folder containing `manifest.json`.
-4. Pin Browser Monitor to the Chrome toolbar. When using a source checkout instead, choose its `Extension` folder.
 
 ### macOS companion (optional)
 
