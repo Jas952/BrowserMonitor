@@ -12,7 +12,7 @@ import {
   customBlockRules,
   normalizeSiteDomain,
   temporaryPauseRules
-} from "../blocker.js";
+} from "../features/security/blocker.js";
 
 test("static blocker metadata matches the packaged rules", () => {
   const easyList = JSON.parse(readFileSync(new URL("../rules/easylist-network.json", import.meta.url)));

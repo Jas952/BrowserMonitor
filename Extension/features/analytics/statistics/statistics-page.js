@@ -1,4 +1,4 @@
-import { browserLanguage, localizeDocument, translate } from "./localization.js";
+import { browserLanguage, localizeDocument, translate } from "../../../core/localization.js";
 
 const todayTotal = document.querySelector("#today-total");
 const sevenDayTotal = document.querySelector("#seven-day-total");

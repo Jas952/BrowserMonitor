@@ -1,4 +1,4 @@
-import { parseURLParts } from "./link-safety.js";
+import { parseURLParts } from "../link-safety.js";
 
 const params = new URLSearchParams(location.search);
 const destinationUrl = params.get("url") ?? "";

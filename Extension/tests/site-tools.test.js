@@ -6,7 +6,7 @@ import {
   normalizedDuplicateURL,
   normalizeRedirectHistory,
   sanitizeCleanupSites
-} from "../site-tools.js";
+} from "../features/tools/site-tools.js";
 
 test("duplicate URLs ignore fragments, tracking parameters, query order and trailing slash", () => {
   assert.equal(

@@ -26,7 +26,15 @@ test("manifest is valid Manifest V3 JSON", () => {
     assert.ok(!manifest.permissions.includes(permission), `${permission} is no longer needed`);
   }
   assert.ok(!("side_panel" in manifest));
-  for (const path of ["activity.html", "activity.css", "activity-page.js", "activity-statistics.js", "feedback.html", "feedback.css", "feedback.js"]) {
+  for (const path of [
+    "features/analytics/activity/activity.html",
+    "features/analytics/activity/activity.css",
+    "features/analytics/activity/activity-page.js",
+    "features/analytics/activity-statistics.js",
+    "features/feedback/feedback.html",
+    "features/feedback/feedback.css",
+    "features/feedback/feedback.js"
+  ]) {
     assert.ok(existsSync(new URL(`../${path}`, import.meta.url)), `${path} is missing`);
   }
   assert.deepEqual(
@@ -41,13 +49,13 @@ test("manifest is valid Manifest V3 JSON", () => {
     "32": "icons/browser-monitor-toolbar-32.png"
   });
   assert.ok(Object.values(manifest.action.default_icon).every((path) => existsSync(new URL(`../${path}`, import.meta.url))));
-  assert.deepEqual(manifest.options_ui, { page: "options.html", open_in_tab: true });
-  assert.deepEqual(manifest.content_scripts[0].js, ["page-guard.js", "content.js"]);
-  assert.ok(existsSync(new URL("../page-guard.js", import.meta.url)));
-  assert.deepEqual(manifest.content_scripts[1].js, ["page-guard.js", "video-resume-frame.js"]);
+  assert.deepEqual(manifest.options_ui, { page: "ui/options/options.html", open_in_tab: true });
+  assert.deepEqual(manifest.content_scripts[0].js, ["features/security/page-guard.js", "core/content.js"]);
+  assert.ok(existsSync(new URL("../features/security/page-guard.js", import.meta.url)));
+  assert.deepEqual(manifest.content_scripts[1].js, ["features/security/page-guard.js", "features/tools/video-resume-frame.js"]);
   assert.equal(manifest.content_scripts[1].all_frames, true);
-  assert.ok(existsSync(new URL("../video-resume-frame.js", import.meta.url)));
-  const frameResume = readFileSync(new URL("../video-resume-frame.js", import.meta.url), "utf8");
+  assert.ok(existsSync(new URL("../features/tools/video-resume-frame.js", import.meta.url)));
+  const frameResume = readFileSync(new URL("../features/tools/video-resume-frame.js", import.meta.url), "utf8");
   assert.match(frameResume, /window === window\.top/);
   assert.match(frameResume, /pagehide/);
   assert.match(frameResume, /seeked/);
@@ -57,14 +65,14 @@ test("manifest is valid Manifest V3 JSON", () => {
   assert.match(frameResume, /force: true/);
   assert.match(frameResume, /getContinueWatchingPosition/);
   assert.match(frameResume, /setContinueWatchingPosition/);
-  assert.deepEqual(manifest.content_scripts[2].js, ["crypto-guard-main.js"]);
+  assert.deepEqual(manifest.content_scripts[2].js, ["features/security/crypto-guard-main.js"]);
   assert.equal(manifest.content_scripts[2].world, "MAIN");
-  assert.ok(existsSync(new URL("../crypto-guard-main.js", import.meta.url)));
+  assert.ok(existsSync(new URL("../features/security/crypto-guard-main.js", import.meta.url)));
   for (const path of [
-    "link-safety.js",
-    "link-warning.html",
-    "link-warning.css",
-    "link-warning.js",
+    "features/security/link-safety.js",
+    "features/security/link-warning/link-warning.html",
+    "features/security/link-warning/link-warning.css",
+    "features/security/link-warning/link-warning.js",
     "rules/easylist-cookie-cosmetic.css",
     "rules/ruadlist-network.json",
     "rules/ruadlist-cosmetic.css",
@@ -86,18 +94,24 @@ test("manifest is valid Manifest V3 JSON", () => {
 });
 
 test("standalone extension pages use the exact shield header asset", () => {
-  for (const page of ["activity.html", "statistics.html", "receipt-details.html", "options.html", "feedback.html"]) {
+  for (const page of [
+    "features/analytics/activity/activity.html",
+    "features/analytics/statistics/statistics.html",
+    "features/tools/receipt-details/receipt-details.html",
+    "ui/options/options.html",
+    "features/feedback/feedback.html"
+  ]) {
     const html = readFileSync(new URL(`../${page}`, import.meta.url), "utf8");
-    assert.match(html, /src="icons\/browser-monitor-shield-48\.png"/);
+    assert.match(html, /src="(?:\.\.\/)+icons\/browser-monitor-shield-48\.png"/);
   }
 });
 
 test("popup UI is localized and reserves stable control widths", () => {
-  const popupHTML = readFileSync(new URL("../popup.html", import.meta.url), "utf8");
-  const popupCSS = readFileSync(new URL("../popup.css", import.meta.url), "utf8");
-  const popupJS = readFileSync(new URL("../popup.js", import.meta.url), "utf8");
-  const serviceWorker = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
-  const localization = readFileSync(new URL("../localization.js", import.meta.url), "utf8");
+  const popupHTML = readFileSync(new URL("../ui/popup/popup.html", import.meta.url), "utf8");
+  const popupCSS = readFileSync(new URL("../ui/popup/popup.css", import.meta.url), "utf8");
+  const popupJS = readFileSync(new URL("../ui/popup/popup.js", import.meta.url), "utf8");
+  const serviceWorker = readFileSync(new URL("../core/service-worker.js", import.meta.url), "utf8");
+  const localization = readFileSync(new URL("../core/localization.js", import.meta.url), "utf8");
 
   assert.match(localization, /ru:\s*\{/);
   assert.match(localization, /en:\s*\{/);
@@ -193,7 +207,7 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.doesNotMatch(serviceWorker, /onRuleMatchedDebug|recentBlockedResources/);
   assert.match(popupJS, /kind: "playActivationAnimation"/);
   assert.match(popupJS, /chrome\.scripting\.executeScript/);
-  const contentScript = readFileSync(new URL("../content.js", import.meta.url), "utf8");
+  const contentScript = readFileSync(new URL("../core/content.js", import.meta.url), "utf8");
   assert.doesNotMatch(serviceWorker, /Browser Workspace/);
   assert.match(serviceWorker, /browser-monitor-allowlist-site/);
   assert.match(serviceWorker, /Exclude this site from blocking/);
@@ -239,6 +253,7 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(popupJS, /statistics\.html/);
   assert.match(popupJS, /activity\.html/);
   assert.match(popupJS, /feedback\.html/);
+  assert.match(popupJS, /openExtensionWindow\(feedbackURL, \{ width: 580, height: 740 \}\)/);
   assert.match(popupJS, /type: "site"/);
   assert.doesNotMatch(popupJS, /activityButton|activityTabButton|reportSiteButton/);
   assert.doesNotMatch(popupJS, /workspace\.html|sidePanel/);
@@ -246,10 +261,10 @@ test("popup UI is localized and reserves stable control widths", () => {
 });
 
 test("options page exposes separate settings panels without reports", () => {
-  const html = readFileSync(new URL("../options.html", import.meta.url), "utf8");
-  const css = readFileSync(new URL("../options.css", import.meta.url), "utf8");
-  const script = readFileSync(new URL("../options.js", import.meta.url), "utf8");
-  const serviceWorker = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../ui/options/options.html", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../ui/options/options.css", import.meta.url), "utf8");
+  const script = readFileSync(new URL("../ui/options/options.js", import.meta.url), "utf8");
+  const serviceWorker = readFileSync(new URL("../core/service-worker.js", import.meta.url), "utf8");
 
   for (const section of ["general", "protection", "privacy", "appearance", "rules", "data"]) {
     assert.match(html, new RegExp(`id="${section}"`));
@@ -305,9 +320,9 @@ test("options page exposes separate settings panels without reports", () => {
 });
 
 test("blocking statistics use a dedicated localized page", () => {
-  const html = readFileSync(new URL("../statistics.html", import.meta.url), "utf8");
-  const css = readFileSync(new URL("../statistics.css", import.meta.url), "utf8");
-  const script = readFileSync(new URL("../statistics-page.js", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../features/analytics/statistics/statistics.html", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../features/analytics/statistics/statistics.css", import.meta.url), "utf8");
+  const script = readFileSync(new URL("../features/analytics/statistics/statistics-page.js", import.meta.url), "utf8");
   assert.match(html, /id="today-total"/);
   assert.match(html, /id="seven-day-total"/);
   assert.match(html, /id="top-sites"/);
@@ -318,9 +333,9 @@ test("blocking statistics use a dedicated localized page", () => {
 });
 
 test("link warning page exposes compact safe-first actions", () => {
-  const html = readFileSync(new URL("../link-warning.html", import.meta.url), "utf8");
-  const css = readFileSync(new URL("../link-warning.css", import.meta.url), "utf8");
-  const script = readFileSync(new URL("../link-warning.js", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../features/security/link-warning/link-warning.html", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../features/security/link-warning/link-warning.css", import.meta.url), "utf8");
+  const script = readFileSync(new URL("../features/security/link-warning/link-warning.js", import.meta.url), "utf8");
   const buildScript = readFileSync(new URL("../../script/build_release.mjs", import.meta.url), "utf8");
 
   assert.match(html, /id="continue-button"/);
@@ -337,15 +352,15 @@ test("link warning page exposes compact safe-first actions", () => {
   assert.match(script, /Не вводите пароль, seed-фразу/);
   assert.match(css, /\.warning-panel/);
   assert.match(css, /\.signal svg/);
-  assert.match(buildScript, /"link-warning\.html"/);
-  assert.match(buildScript, /"site-tools\.js"/);
+  assert.match(buildScript, /"features"/);
+  assert.match(buildScript, /runtimeDirectories/);
   assert.match(buildScript, /module is missing from the package/);
 });
 
 test("activity and feedback surfaces are bilingual and privacy explicit", () => {
-  const activity = readFileSync(new URL("../activity-page.js", import.meta.url), "utf8");
-  const feedbackHTML = readFileSync(new URL("../feedback.html", import.meta.url), "utf8");
-  const feedback = readFileSync(new URL("../feedback.js", import.meta.url), "utf8");
+  const activity = readFileSync(new URL("../features/analytics/activity/activity-page.js", import.meta.url), "utf8");
+  const feedbackHTML = readFileSync(new URL("../features/feedback/feedback.html", import.meta.url), "utf8");
+  const feedback = readFileSync(new URL("../features/feedback/feedback.js", import.meta.url), "utf8");
   assert.match(activity, /en:\s*\{/);
   assert.match(activity, /ru:\s*\{/);
   assert.match(activity, /Site activity/);

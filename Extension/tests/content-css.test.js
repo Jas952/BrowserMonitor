@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const source = readFileSync(new URL("../content.js", import.meta.url), "utf8");
+const source = readFileSync(new URL("../core/content.js", import.meta.url), "utf8");
 
 test("Yandex ad cleanup does not hide broad search-page containers", () => {
   assert.equal(source.includes('[data-fast-name*="direct" i]'), false);

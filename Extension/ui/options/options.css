@@ -108,9 +108,9 @@ legend { padding:0 10px 0 0; color:var(--faint); font-size:10px; font-weight:700
 .artwork-option span { display:block; height:94px; border:2px solid transparent; border-radius:8px; background-position:center; background-size:cover; box-shadow:inset 0 0 0 1px var(--line); transition:160ms ease; }
 .artwork-option input:checked + span { border-color:var(--accent); box-shadow:0 0 0 4px var(--accent-soft); }
 .artwork-option b { display:block; overflow:hidden; margin-top:8px; text-align:center; text-overflow:ellipsis; white-space:nowrap; font-size:11px; font-weight:600; }
-.artwork-option.landscape span { background-image:url("images/image-swap-landscape.svg"); }
-.artwork-option.ocean span { background-image:url("images/image-swap-ocean.svg"); }
-.artwork-option.minimal span { background-image:url("images/image-swap-minimal.svg"); }
+.artwork-option.landscape span { background-image:url("../../images/image-swap-landscape.svg"); }
+.artwork-option.ocean span { background-image:url("../../images/image-swap-ocean.svg"); }
+.artwork-option.minimal span { background-image:url("../../images/image-swap-minimal.svg"); }
 .artwork-option.custom span { background:linear-gradient(var(--accent),var(--accent)) center/1px 24px no-repeat,linear-gradient(var(--accent),var(--accent)) center/24px 1px no-repeat,linear-gradient(135deg,var(--accent-soft),var(--surface-raised)); }
 .custom-image-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:20px; margin-top:20px; padding:18px; border-radius:8px; background:var(--accent-soft); }
 .custom-image-row strong { font-size:12px; }

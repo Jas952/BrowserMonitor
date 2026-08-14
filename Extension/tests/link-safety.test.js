@@ -4,7 +4,7 @@ import {
   evaluateLinkSafety,
   parseURLParts,
   sanitizeLinkSafetyDomains
-} from "../link-safety.js";
+} from "../features/security/link-safety.js";
 
 test("parseURLParts separates path users from real domains", () => {
   const twitterUser = parseURLParts("https://twitter.com/some_user");

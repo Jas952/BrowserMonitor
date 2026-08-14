@@ -32,7 +32,7 @@
     "https://*/*"
   ],
   "background": {
-    "service_worker": "service-worker.js",
+    "service_worker": "core/service-worker.js",
     "type": "module"
   },
   "declarative_net_request": {
@@ -56,14 +56,14 @@
   },
   "action": {
     "default_title": "Browser Monitor",
-    "default_popup": "popup.html",
+    "default_popup": "ui/popup/popup.html",
     "default_icon": {
       "16": "icons/browser-monitor-toolbar-16.png",
       "32": "icons/browser-monitor-toolbar-32.png"
     }
   },
   "options_ui": {
-    "page": "options.html",
+    "page": "ui/options/options.html",
     "open_in_tab": true
   },
   "content_scripts": [
@@ -73,8 +73,8 @@
         "https://*/*"
       ],
       "js": [
-        "page-guard.js",
-        "content.js"
+        "features/security/page-guard.js",
+        "core/content.js"
       ],
       "run_at": "document_start",
       "all_frames": false
@@ -85,8 +85,8 @@
         "https://*/*"
       ],
       "js": [
-        "page-guard.js",
-        "video-resume-frame.js"
+        "features/security/page-guard.js",
+        "features/tools/video-resume-frame.js"
       ],
       "run_at": "document_start",
       "all_frames": true
@@ -97,7 +97,7 @@
         "https://*/*"
       ],
       "js": [
-        "crypto-guard-main.js"
+        "features/security/crypto-guard-main.js"
       ],
       "run_at": "document_start",
       "all_frames": false,

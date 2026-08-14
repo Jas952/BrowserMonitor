@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 
-const source = readFileSync(new URL("../page-guard.js", import.meta.url), "utf8");
+const source = readFileSync(new URL("../features/security/page-guard.js", import.meta.url), "utf8");
 const context = vm.createContext({ URL });
 vm.runInContext(source, context);
 const guard = context.BrowserMonitorPageGuard;
@@ -46,7 +46,7 @@ test("continue watching identity removes common mirror noise", () => {
 test("programmatic wallet copies are cleaned in the page world", async () => {
   const writes = [];
   const events = [];
-  const mainSource = readFileSync(new URL("../crypto-guard-main.js", import.meta.url), "utf8");
+  const mainSource = readFileSync(new URL("../features/security/crypto-guard-main.js", import.meta.url), "utf8");
   const clipboard = { writeText: async (value) => writes.push(value) };
   const mainContext = vm.createContext({
     navigator: { clipboard },

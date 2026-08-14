@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 
-const source = readFileSync(new URL("../page-guard.js", import.meta.url), "utf8");
+const source = readFileSync(new URL("../features/security/page-guard.js", import.meta.url), "utf8");
 const context = vm.createContext({ URL });
 vm.runInContext(source, context);
 const guard = context.BrowserMonitorPageGuard;

@@ -5,7 +5,7 @@ import {
   normalizeBlockingStatistics,
   recordBlockingEvent,
   summarizeBlockingStatistics
-} from "../statistics.js";
+} from "../features/analytics/statistics.js";
 
 test("blocking statistics aggregate today, seven days, sites, and resources", () => {
   const now = new Date(2026, 6, 22, 12, 0, 0);

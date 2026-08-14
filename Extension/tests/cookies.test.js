@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cookieExportFilename, serializeCookies } from "../cookies.js";
+import { cookieExportFilename, serializeCookies } from "../features/tools/cookies.js";
 
 const cookies = [
   {

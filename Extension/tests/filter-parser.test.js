@@ -5,7 +5,7 @@ import {
   convertABPNetworkRule,
   filterListMetadata,
   genericCosmeticSelectors
-} from "../filter-parser.js";
+} from "../features/security/filter-parser.js";
 
 const fixture = `[Adblock Plus 2.0]
 ! Title: Personal Protection
