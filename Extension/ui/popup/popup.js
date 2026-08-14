@@ -1,5 +1,5 @@
-import { browserLanguage, localizeDocument, translate } from "./localization.js";
-import { duplicateTabGroups } from "./site-tools.js";
+import { browserLanguage, localizeDocument, translate } from "../../core/localization.js";
+import { duplicateTabGroups } from "../../features/tools/site-tools.js";
 
 const extensionToggle = document.querySelector("#extension-toggle");
 const summary = document.querySelector("#summary");
@@ -893,12 +893,12 @@ async function playActivationAnimationInActiveTab() {
     try {
       await chrome.scripting.executeScript({
         target: { tabId: activeTab.id },
-        files: ["crypto-guard-main.js"],
+        files: ["features/security/crypto-guard-main.js"],
         world: "MAIN"
       });
       await chrome.scripting.executeScript({
         target: { tabId: activeTab.id },
-        files: ["page-guard.js", "content.js"]
+        files: ["features/security/page-guard.js", "core/content.js"]
       });
       const result = await chrome.tabs.sendMessage(activeTab.id, message);
       return result?.ok === true;
@@ -999,7 +999,7 @@ privacyReceiptButton.addEventListener("click", async () => {
 
 receiptDetailsButton.addEventListener("click", async () => {
   if (!activeTab) return;
-  await openExtensionTab(chrome.runtime.getURL(`receipt-details.html?tabId=${activeTab.id}`));
+  await openExtensionTab(chrome.runtime.getURL(`features/tools/receipt-details/receipt-details.html?tabId=${activeTab.id}`));
 });
 
 pipButton.addEventListener("click", async () => {
@@ -1087,14 +1087,14 @@ settingsButton.addEventListener("click", async () => {
   await chrome.runtime.openOptionsPage();
 });
 async function openActivityPage() {
-  await openExtensionWindow(chrome.runtime.getURL("activity.html"), {
+  await openExtensionWindow(chrome.runtime.getURL("features/analytics/activity/activity.html"), {
     width: 1120,
     height: 760
   });
 }
 headerActivityButton.addEventListener("click", openActivityPage);
 async function openStatisticsPage() {
-  await openExtensionWindow(chrome.runtime.getURL("statistics.html"), {
+  await openExtensionWindow(chrome.runtime.getURL("features/analytics/statistics/statistics.html"), {
     width: 860,
     height: 680
   });
@@ -1137,8 +1137,8 @@ feedbackButton.addEventListener("click", async () => {
     ? new URLSearchParams({ type: "site", url: activeTab.url, title: activeTab.title || "" })
     : new URLSearchParams();
   const query = params.toString();
-  const feedbackURL = chrome.runtime.getURL(`feedback.html${query ? `?${query}` : ""}`);
-  await openExtensionTab(feedbackURL);
+  const feedbackURL = chrome.runtime.getURL(`features/feedback/feedback.html${query ? `?${query}` : ""}`);
+  await openExtensionWindow(feedbackURL, { width: 580, height: 740 });
 });
 
 async function bootstrap() {

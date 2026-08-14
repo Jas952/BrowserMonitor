@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeLanguage, translate } from "../localization.js";
+import { normalizeLanguage, translate } from "../core/localization.js";
 
 test("English and Russian settings copy is complete for core controls", () => {
   const keys = [

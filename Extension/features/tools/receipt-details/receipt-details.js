@@ -1,4 +1,4 @@
-import { browserLanguage, localizeDocument, translate } from "./localization.js";
+import { browserLanguage, localizeDocument, translate } from "../../../core/localization.js";
 
 const detailsDomain = document.querySelector("#details-domain");
 const blockedCount = document.querySelector("#blocked-count");

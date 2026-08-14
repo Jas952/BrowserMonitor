@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assessTab, severityForScore } from "../scoring.js";
+import { assessTab, severityForScore } from "../features/analytics/scoring.js";
 
 test("severity boundaries remain stable", () => {
   assert.equal(severityForScore(24), "normal");

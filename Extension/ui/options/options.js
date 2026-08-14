@@ -1,4 +1,4 @@
-import { browserLanguage, localizeDocument, normalizeLanguage, translate } from "./localization.js";
+import { browserLanguage, localizeDocument, normalizeLanguage, translate } from "../../core/localization.js";
 
 const languageSelect = document.querySelector("#language-select");
 const contentBlockingToggle = document.querySelector("#contentBlockingEnabled");
@@ -459,7 +459,7 @@ document.querySelector("#reset-settings").addEventListener("click", async () => 
 });
 
 document.querySelector("#open-feedback").addEventListener("click", async () => {
-  const url = chrome.runtime.getURL("feedback.html");
+  const url = chrome.runtime.getURL("features/feedback/feedback.html");
   const existing = (await chrome.tabs.query({})).find((tab) => {
     try {
       const current = new URL(tab.url);

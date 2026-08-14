@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { recordActivitySample, summarizeActivityStatistics } from "../activity-statistics.js";
+import { recordActivitySample, summarizeActivityStatistics } from "../features/analytics/activity-statistics.js";
 
 test("activity statistics separate active, video and reading time", () => {
   const now = new Date("2026-07-23T14:00:00");

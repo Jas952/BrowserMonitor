@@ -1,23 +1,23 @@
-import { assessTab } from "./scoring.js";
-import { cookieExportFilename, serializeCookies } from "./cookies.js";
-import { compileFilterList } from "./filter-parser.js";
+import { assessTab } from "../features/analytics/scoring.js";
+import { cookieExportFilename, serializeCookies } from "../features/tools/cookies.js";
+import { compileFilterList } from "../features/security/filter-parser.js";
 import {
   DEFAULT_LINK_SAFETY_SETTINGS,
   evaluateLinkSafety,
   normalizeLinkSafetySettings,
   parseURLParts,
   sanitizeLinkSafetyDomains
-} from "./link-safety.js";
+} from "../features/security/link-safety.js";
 import {
   normalizeBlockingStatistics,
   recordBlockingEvent,
   summarizeBlockingStatistics
-} from "./statistics.js";
+} from "../features/analytics/statistics.js";
 import {
   recordActivitySample,
   summarizeActivityStatistics
-} from "./activity-statistics.js";
-import { CRYPTO_MINING_RULES } from "./rules/cryptomining-rules.js";
+} from "../features/analytics/activity-statistics.js";
+import { CRYPTO_MINING_RULES } from "../rules/cryptomining-rules.js";
 import {
   CONTENT_BLOCKER_RULESET_IDS,
   activeTemporaryPauses,
@@ -26,13 +26,13 @@ import {
   customBlockRules,
   normalizeSiteDomain,
   temporaryPauseRules
-} from "./blocker.js";
+} from "../features/security/blocker.js";
 import {
   appendRedirectStep,
   normalizeRedirectHistory,
   registrableSite,
   sanitizeCleanupSites
-} from "./site-tools.js";
+} from "../features/tools/site-tools.js";
 
 const ALARM_NAME = "collect-browser-snapshot";
 const CUSTOM_FILTER_FIRST_RULE_ID = 630_000;
@@ -342,7 +342,7 @@ function linkWarningURL(result, targetUrl, sourceUrl = "") {
   for (const reason of result.reasons.slice(0, 8)) {
     parameters.append("reason", reason.message);
   }
-  return chrome.runtime.getURL(`link-warning.html?${parameters.toString()}`);
+  return chrome.runtime.getURL(`features/security/link-warning/link-warning.html?${parameters.toString()}`);
 }
 
 async function evaluateLinkSafetyForNavigation(message, sender) {
