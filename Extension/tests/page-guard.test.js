@@ -4,6 +4,7 @@ import test from "node:test";
 import vm from "node:vm";
 
 const source = readFileSync(new URL("../features/security/page-guard.js", import.meta.url), "utf8");
+const contentSource = readFileSync(new URL("../core/content.js", import.meta.url), "utf8");
 const context = vm.createContext({ URL });
 vm.runInContext(source, context);
 const guard = context.BrowserMonitorPageGuard;
@@ -74,4 +75,39 @@ test("programmatic wallet copies are cleaned in the page world", async () => {
   assert.deepEqual(writes, [formattedAddress, address]);
   const copyEvent = events.find((event) => event.type === "browser-monitor-crypto-copy");
   assert.equal(copyEvent.detail.changed, true);
+});
+
+test("ordinary prevented paste is observed without inserting the text again", async () => {
+  const handlers = contentSource.match(/function watchClipboardPaste\(event\) \{[\s\S]*?\n  async function rememberCryptoCopy/);
+  assert.ok(handlers, "clipboard paste observer must remain present");
+  const sourceUnderTest = handlers[0].replace(/\n  async function rememberCryptoCopy$/, "");
+  const notices = [];
+  class Input {
+    constructor() {
+      this.value = "";
+    }
+  }
+  const pasteContext = vm.createContext({
+    cryptoGuardEnabled: true,
+    HTMLInputElement: Input,
+    HTMLTextAreaElement: class TextArea extends Input {},
+    setTimeout,
+    showPageNotice: (kind) => notices.push(kind),
+    insertPastedText: (target, value) => {
+      target.value += value;
+      return true;
+    },
+    BrowserMonitorPageGuard: { findWalletAddress: () => null }
+  });
+  vm.runInContext(sourceUnderTest, pasteContext);
+  const target = new Input();
+  pasteContext.watchClipboardPaste({
+    target,
+    defaultPrevented: true,
+    clipboardData: { getData: () => "hello" }
+  });
+  target.value = "hello";
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(target.value, "hello");
+  assert.deepEqual(notices, []);
 });

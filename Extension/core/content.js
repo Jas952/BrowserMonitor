@@ -1400,7 +1400,6 @@
         ? "Crypto Guard не смог безопасно скопировать адрес. Скопируйте его ещё раз."
         : "Crypto Guard could not copy the address safely. Please copy it again.";
     }
-    if (kind === "clipboardBlocked") return russian ? "Сайт попытался заблокировать обычную вставку. Browser Monitor восстановил текст." : "The site tried to block a normal paste. Browser Monitor restored the text.";
     if (kind === "clipboardChanged") return russian
       ? `Скопировано: “${values.original}”. Сайт попытался заменить на: “${values.changed}”.`
       : `Copied: “${values.original}”. The site tried to replace it with: “${values.changed}”.`;
@@ -1549,11 +1548,27 @@
     if (!cryptoGuardEnabled) return;
     const value = event.clipboardData?.getData("text/plain") ?? "";
     if (!value || globalThis.BrowserMonitorPageGuard?.findWalletAddress(value)) return;
+    const snapshot = clipboardPasteTargetSnapshot(event.target);
     setTimeout(() => {
       if (!event.defaultPrevented) return;
-      if (insertPastedText(event.target, value)) showPageNotice("clipboardBlocked");
-      else showPageNotice("clipboardIntercepted");
+      if (!clipboardPasteTargetChanged(snapshot)) showPageNotice("clipboardIntercepted");
     });
+  }
+
+  function clipboardPasteTargetSnapshot(target) {
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+      return { target, kind: "value", value: target.value };
+    }
+    const editable = target?.closest?.("[contenteditable=''], [contenteditable='true']");
+    return editable ? { target: editable, kind: "text", value: editable.textContent ?? "" } : null;
+  }
+
+  function clipboardPasteTargetChanged(snapshot) {
+    if (!snapshot) return false;
+    const value = snapshot.kind === "value"
+      ? snapshot.target.value
+      : snapshot.target.textContent ?? "";
+    return value !== snapshot.value;
   }
 
   async function rememberCryptoCopy(address) {
