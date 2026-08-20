@@ -5,7 +5,7 @@
   "compatibility_date": "2026-07-28",
   "workers_dev": true,
   "vars": {
-    "TO_EMAIL": "darktmonth@gmail.com",
+    "TO_EMAIL": "dev.dmitriy.lb9@gmail.com",
     "FROM_EMAIL": "Browser Monitor <onboarding@resend.dev>",
     "ALLOWED_EXTENSION_IDS": ""
   },
