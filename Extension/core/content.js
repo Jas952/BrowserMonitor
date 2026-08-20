@@ -1400,6 +1400,7 @@
         ? "Crypto Guard не смог безопасно скопировать адрес. Скопируйте его ещё раз."
         : "Crypto Guard could not copy the address safely. Please copy it again.";
     }
+    if (kind === "clipboardBlocked") return russian ? "Сайт попытался заблокировать обычную вставку. Browser Monitor восстановил текст." : "The site tried to block a normal paste. Browser Monitor restored the text.";
     if (kind === "clipboardChanged") return russian
       ? `Скопировано: “${values.original}”. Сайт попытался заменить на: “${values.changed}”.`
       : `Copied: “${values.original}”. The site tried to replace it with: “${values.changed}”.`;
@@ -1551,7 +1552,12 @@
     const snapshot = clipboardPasteTargetSnapshot(event.target);
     setTimeout(() => {
       if (!event.defaultPrevented) return;
-      if (!clipboardPasteTargetChanged(snapshot)) showPageNotice("clipboardIntercepted");
+      if (clipboardPasteTargetChanged(snapshot)) return;
+      setTimeout(() => {
+        if (!event.defaultPrevented || clipboardPasteTargetChanged(snapshot)) return;
+        if (insertPastedText(event.target, value)) showPageNotice("clipboardBlocked");
+        else showPageNotice("clipboardIntercepted");
+      });
     });
   }
 

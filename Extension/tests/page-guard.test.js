@@ -77,7 +77,7 @@ test("programmatic wallet copies are cleaned in the page world", async () => {
   assert.equal(copyEvent.detail.changed, true);
 });
 
-test("ordinary prevented paste is observed without inserting the text again", async () => {
+test("ordinary prevented paste waits for an editor before using the fallback", async () => {
   const handlers = contentSource.match(/function watchClipboardPaste\(event\) \{[\s\S]*?\n  async function rememberCryptoCopy/);
   assert.ok(handlers, "clipboard paste observer must remain present");
   const sourceUnderTest = handlers[0].replace(/\n  async function rememberCryptoCopy$/, "");
@@ -110,4 +110,14 @@ test("ordinary prevented paste is observed without inserting the text again", as
   await new Promise((resolve) => setTimeout(resolve, 5));
   assert.equal(target.value, "hello");
   assert.deepEqual(notices, []);
+
+  const fallbackTarget = new Input();
+  pasteContext.watchClipboardPaste({
+    target: fallbackTarget,
+    defaultPrevented: true,
+    clipboardData: { getData: () => "world" }
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(fallbackTarget.value, "world");
+  assert.deepEqual(notices, ["clipboardBlocked"]);
 });
