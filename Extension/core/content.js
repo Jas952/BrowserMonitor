@@ -1549,11 +1549,32 @@
     if (!cryptoGuardEnabled) return;
     const value = event.clipboardData?.getData("text/plain") ?? "";
     if (!value || globalThis.BrowserMonitorPageGuard?.findWalletAddress(value)) return;
+    const snapshot = clipboardPasteTargetSnapshot(event.target);
     setTimeout(() => {
       if (!event.defaultPrevented) return;
-      if (insertPastedText(event.target, value)) showPageNotice("clipboardBlocked");
-      else showPageNotice("clipboardIntercepted");
+      if (clipboardPasteTargetChanged(snapshot)) return;
+      setTimeout(() => {
+        if (!event.defaultPrevented || clipboardPasteTargetChanged(snapshot)) return;
+        if (insertPastedText(event.target, value)) showPageNotice("clipboardBlocked");
+        else showPageNotice("clipboardIntercepted");
+      });
     });
+  }
+
+  function clipboardPasteTargetSnapshot(target) {
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+      return { target, kind: "value", value: target.value };
+    }
+    const editable = target?.closest?.("[contenteditable=''], [contenteditable='true']");
+    return editable ? { target: editable, kind: "text", value: editable.textContent ?? "" } : null;
+  }
+
+  function clipboardPasteTargetChanged(snapshot) {
+    if (!snapshot) return false;
+    const value = snapshot.kind === "value"
+      ? snapshot.target.value
+      : snapshot.target.textContent ?? "";
+    return value !== snapshot.value;
   }
 
   async function rememberCryptoCopy(address) {
