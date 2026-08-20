@@ -2,6 +2,7 @@ const $ = (selector) => document.querySelector(selector);
 let period = "day";
 let refreshTimer = null;
 let language = "en";
+let latestSummary = null;
 const COPY = {
   en: {
     title: "Site activity", subtitle: "Active time only · data stays on this device", periods: ["Day", "Week", "Month"],
@@ -9,12 +10,13 @@ const COPY = {
     video: "Video watching", videoDetail: "excluding background and ad videos", reading: "Reading", readingDetail: "pages with substantial text",
     chart: "Activity trend", chartDetail: "Active time, video and reading by day", legend: '<i class="all"></i>total <i class="video"></i>video <i class="read"></i>reading',
     sites: "Top sites", sitesDetail: "Sorted by active time", headings: ["Site", "Total visits", "Period", "Time", "Average", "Video", "Reading"],
-    empty: "Statistics will appear after active site use.", reality: "Reality check", realityDetail: "A little honest arithmetic",
-    workday: (hours) => `of a ${hours}-hour work period`, focus: "Focus blocks lost", coffee: "Coffee breaks", films: "Feature films",
-    quiet: "The internet is behaving so far.", busy: "That was enough time for a long meeting. Maybe two.", full: "The internet has worked a full shift. The question is: for whom?",
+    empty: "Statistics will appear after active site use.", reality: "Time equivalents", realityDetail: "Neutral comparisons for perspective",
+    workday: (hours) => `of a ${hours}-hour reference period`, focus: "25-minute blocks", coffee: "15-minute intervals", films: "110-minute films",
+    quiet: "A compact comparison of active time.", busy: "Active time expressed as familiar intervals.", full: "A long active period, shown without judging how it was used.",
     privacy: "Only a focused, visible tab with recent interaction is counted. Domains and daily counters are kept for 90 days — without full URLs or page titles.",
-    clear: "Clear statistics", confirm: "Clear all locally stored site activity?", visits: "active visits", sitesCount: "sites", second: "sec", minute: "min", hour: "h",
+    clear: "Clear statistics", export: "Export JSON", exportPrompt: "Browser Monitor needs Downloads access only to save this local activity report.", confirm: "Clear all locally stored site activity?", visits: "active visits", sitesCount: "sites", second: "sec", minute: "min", hour: "h",
     periodLabel:"Period", metricsLabel:"Summary metrics", chartAria:"Activity chart"
+    ,comparison:"Compared with previous period", comparisonDetail:"active time", retention:(days)=>`Local retention: ${days} days.`
     ,redirectTitle:"Redirect map", redirectDetail:"Recent local navigation chains", redirectEmpty:"Redirect chains will appear after a site sends a tab through another domain.", clearRedirects:"Clear map"
   },
   ru: {
@@ -23,12 +25,13 @@ const COPY = {
     video: "Просмотр видео", videoDetail: "без фоновых и рекламных роликов", reading: "Чтение", readingDetail: "страницы с содержательным текстом",
     chart: "Динамика активности", chartDetail: "Активное время, видео и чтение по дням", legend: '<i class="all"></i>всего <i class="video"></i>видео <i class="read"></i>чтение',
     sites: "ТОП сайтов", sitesDetail: "Сортировка по активному времени", headings: ["Сайт", "Всего визитов", "За период", "Время", "Среднее", "Видео", "Чтение"],
-    empty: "Статистика появится после активного использования сайтов.", reality: "Счётчик реальности", realityDetail: "Немного честной арифметики",
-    workday: (hours) => `от ${hours}-часового рабочего периода`, focus: "Помодоро потеряно", coffee: "Кофе-брейков", films: "Полнометражек",
-    quiet: "Пока интернет ведёт себя прилично.", busy: "Уже можно было провести большое совещание. Даже два.", full: "Интернет официально отработал полную смену. Вопрос: за кого?",
+    empty: "Статистика появится после активного использования сайтов.", reality: "Эквиваленты времени", realityDetail: "Нейтральные сравнения для масштаба",
+    workday: (hours) => `от ${hours}-часового контрольного периода`, focus: "Отрезков по 25 минут", coffee: "Интервалов по 15 минут", films: "Фильмов по 110 минут",
+    quiet: "Краткое сравнение активного времени.", busy: "Активное время показано через знакомые интервалы.", full: "Долгий активный период без оценки того, как он был использован.",
     privacy: "Считается только видимая вкладка в фокусе и недавнее взаимодействие. Хранятся домены и дневные счётчики за 90 дней — без URL и заголовков страниц.",
-    clear: "Очистить статистику", confirm: "Очистить всю статистику посещений?", visits: "активных посещений", sitesCount: "сайтов", second:"сек", minute:"мин", hour:"ч",
+    clear: "Очистить статистику", export: "Экспорт JSON", exportPrompt: "Доступ к загрузкам нужен Browser Monitor только для сохранения локального отчёта об активности.", confirm: "Очистить всю статистику посещений?", visits: "активных посещений", sitesCount: "сайтов", second:"сек", minute:"мин", hour:"ч",
     periodLabel:"Период", metricsLabel:"Основные показатели", chartAria:"График активности"
+    ,comparison:"К предыдущему периоду", comparisonDetail:"активное время", retention:(days)=>`Локальное хранение: ${days} дней.`
     ,redirectTitle:"Карта перенаправлений", redirectDetail:"Недавние локальные цепочки переходов", redirectEmpty:"Цепочки появятся, когда сайт перенаправит вкладку через другой домен.", clearRedirects:"Очистить карту"
   }
 };
@@ -47,7 +50,8 @@ function applyLanguage() {
   [...$("#site-headings").children].forEach((cell, index) => { cell.textContent = c.headings[index]; });
   $("#empty-state").textContent = c.empty; $("#reality-title").textContent = c.reality; $("#reality-detail").textContent = c.realityDetail;
   $("#focus-label").textContent = c.focus; $("#coffee-label").textContent = c.coffee; $("#films-label").textContent = c.films;
-  $("#privacy-note").textContent = c.privacy; $("#clear-activity").textContent = c.clear;
+  $("#privacy-note").textContent = c.privacy; $("#clear-activity").textContent = c.clear; $("#export-activity").textContent = c.export;
+  $("#comparison-label").textContent = c.comparison; $("#comparison-detail").textContent = c.comparisonDetail;
   $("#redirect-title").textContent = c.redirectTitle; $("#redirect-detail").textContent = c.redirectDetail;
   $("#redirect-empty").textContent = c.redirectEmpty; $("#clear-redirects").textContent = c.clearRedirects;
   $(".periods").ariaLabel = c.periodLabel; $(".metrics").ariaLabel = c.metricsLabel; $("#activity-chart").ariaLabel = c.chartAria;
@@ -85,7 +89,9 @@ function renderChart(days) {
     }
     const label = document.createElement("span");
     label.className = "chart-label";
-    label.textContent = days.length > 10 ? day.key.slice(8) : new Date(`${day.key}T12:00:00`).toLocaleDateString("ru-RU", { weekday: "short" });
+    label.textContent = days.length > 10
+      ? day.key.slice(8)
+      : new Date(`${day.key}T12:00:00`).toLocaleDateString(language === "ru" ? "ru-RU" : "en-US", { weekday: "short" });
     column.append(track, label);
     return column;
   }));
@@ -118,12 +124,15 @@ function renderSites(sites) {
 }
 
 function render(summary) {
+  latestSummary = summary;
   const { totals, humor } = summary;
   $("#active-time").textContent = duration(totals.activeSeconds);
   $("#active-detail").textContent = `${number(totals.visits)} ${copy().visits}`;
   $("#average-time").textContent = duration(totals.averageVisitSeconds);
   $("#video-time").textContent = duration(totals.videoSeconds);
   $("#reading-time").textContent = duration(totals.readingSeconds);
+  $("#comparison-value").textContent = `${summary.comparison.activePercent > 0 ? "+" : ""}${number(summary.comparison.activePercent)}%`;
+  $("#privacy-note").textContent = `${copy().privacy} ${copy().retention(summary.retentionDays)}`;
   $("#workday-percent").textContent = `${number(humor.workdayPercent)}%`;
   $("#workday-detail").textContent = copy().workday(humor.workHours);
   $("#focus-blocks").textContent = number(humor.focusBlocks);
@@ -203,6 +212,27 @@ $("#clear-activity").addEventListener("click", async () => {
 $("#clear-redirects").addEventListener("click", async () => {
   await chrome.runtime.sendMessage({ kind: "clearRedirectHistory" });
   await refresh();
+});
+
+$("#export-activity").addEventListener("click", async () => {
+  if (!latestSummary) return;
+  const permissions = ["downloads"];
+  const hasPermission = await chrome.permissions.contains({ permissions }).catch(() => false);
+  if (!hasPermission && !confirm(copy().exportPrompt)) return;
+  if (!hasPermission && !await chrome.permissions.request({ permissions }).catch(() => false)) return;
+  const payload = {
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    period,
+    privacy: { localOnly: true, includesFullURLs: false, includesPageTitles: false },
+    activity: latestSummary
+  };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
+  try {
+    await chrome.downloads.download({ url, filename: `browser-monitor-activity-${period}.json`, saveAs: true });
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  }
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {

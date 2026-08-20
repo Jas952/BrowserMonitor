@@ -18,10 +18,12 @@
     "scripting",
     "storage",
     "tabs",
+    "webNavigation",
     "webRequest"
   ],
   "optional_permissions": [
     "browsingData",
+    "bookmarks",
     "clipboardWrite",
     "cookies",
     "downloads",
@@ -87,6 +89,17 @@
       "js": [
         "features/security/page-guard.js",
         "features/tools/video-resume-frame.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "features/analytics/frame-metrics.js"
       ],
       "run_at": "document_start",
       "all_frames": true

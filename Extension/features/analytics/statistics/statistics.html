@@ -21,6 +21,7 @@
         <article class="summary-card"><span data-i18n="blockedSevenDays">Last 7 days</span><strong id="seven-day-total">0</strong><p data-i18n="rollingWindow">Rolling local window</p></article>
         <article class="summary-card compact"><span data-i18n="networkRequests">Network</span><strong id="network-total">0</strong></article>
         <article class="summary-card compact"><span data-i18n="videoAndSponsors">Video + sponsors</span><strong id="video-total">0</strong></article>
+        <article class="summary-card compact"><span data-i18n="blockedShare">Blocked share</span><strong id="blocked-share">0%</strong></article>
       </section>
 
       <section class="chart-card">
@@ -40,6 +41,15 @@
           <p id="resources-empty" class="empty" data-i18n="noBlockedResources">Blocked resources will appear here.</p>
         </article>
       </section>
+      <section class="list-grid diagnostics-grid">
+        <article class="list-card"><div class="section-title"><div><h2 data-i18n="blockingSources">Rule sources</h2><p data-i18n="blockingSourcesDescription">Which protection source recorded each block.</p></div></div><ol id="blocking-sources" class="ranked-list"></ol></article>
+        <article class="list-card"><div class="section-title"><div><h2 data-i18n="blockingCategories">Categories</h2><p data-i18n="blockingCategoriesDescription">Ads, trackers, miners, telemetry and interruptions.</p></div></div><ol id="blocking-categories" class="ranked-list"></ol></article>
+      </section>
+      <section class="journal-card">
+        <div class="section-title"><div><h2 data-i18n="blockingJournal">Local request journal</h2><p data-i18n="blockingJournalDescription">Recorded only when explicitly enabled in Settings.</p></div><div><button id="refresh-journal" type="button" data-i18n="refresh">Refresh</button><button id="clear-journal" type="button" data-i18n="clearJournal">Clear journal</button></div></div>
+        <div class="table-wrap"><table><thead><tr><th data-i18n="journalTime">Time</th><th data-i18n="journalSite">Site</th><th data-i18n="journalResource">Resource</th><th data-i18n="journalSource">Source</th><th data-i18n="journalCategory">Category</th></tr></thead><tbody id="journal-rows"></tbody></table></div>
+      </section>
+      <section class="diagnosis-card"><div class="section-title"><div><h2 data-i18n="siteDiagnostics">Current site diagnostics</h2><p id="diagnosis-summary" data-i18n="siteDiagnosticsDescription">Shows active protection that may affect the current page.</p></div></div><div id="diagnosis-signals" class="diagnosis-signals"></div><div class="diagnosis-actions"><button id="bypass-once" type="button" data-i18n="bypassOnce">Bypass for one reload</button><button id="exclude-site" type="button" data-i18n="excludeSite">Exclude site</button></div><p id="diagnosis-status" role="status"></p></section>
     </main>
 
     <footer>

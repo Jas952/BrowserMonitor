@@ -1,7 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
-const FEEDBACK_RECIPIENT_EMAIL = "darktmonth@gmail.com";
+const FEEDBACK_RECIPIENT_EMAIL = "dev.dmitriy.lb9@gmail.com";
 const FEEDBACK_ENDPOINT_URL = "https://browser-monitor-feedback.darktmonth.workers.dev/feedback";
 const MAX_OUTBOX_BYTES = 6 * 1024 * 1024;
 let language = "en";

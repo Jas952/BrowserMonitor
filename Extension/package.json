@@ -3,6 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:domain-data": "esbuild vendor/domain-intelligence-source.js --bundle --format=esm --platform=browser --minify --outfile=features/security/domain-intelligence.js",
     "test": "node --test tests/*.test.js"
+  },
+  "devDependencies": {
+    "confusables": "1.1.1",
+    "esbuild": "0.28.2",
+    "punycode": "2.3.1",
+    "tldts": "7.4.10"
   }
 }

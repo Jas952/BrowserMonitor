@@ -16,10 +16,11 @@ test("manifest is valid Manifest V3 JSON", () => {
   assert.ok(!manifest.permissions.includes("declarativeNetRequestFeedback"));
   assert.ok(manifest.permissions.includes("scripting"));
   assert.ok(manifest.permissions.includes("webRequest"));
+  assert.ok(manifest.permissions.includes("webNavigation"));
   assert.ok(!manifest.permissions.includes("cookies"));
   assert.ok(!manifest.permissions.includes("downloads"));
   assert.ok(!manifest.permissions.includes("clipboardWrite"));
-  assert.deepEqual(manifest.optional_permissions, ["browsingData", "clipboardWrite", "cookies", "downloads", "history"]);
+  assert.deepEqual(manifest.optional_permissions, ["browsingData", "bookmarks", "clipboardWrite", "cookies", "downloads", "history"]);
   assert.ok(manifest.permissions.includes("contextMenus"));
   assert.ok(manifest.permissions.includes("favicon"));
   for (const permission of ["bookmarks", "sidePanel", "tabGroups"]) {
@@ -33,7 +34,10 @@ test("manifest is valid Manifest V3 JSON", () => {
     "features/analytics/activity-statistics.js",
     "features/feedback/feedback.html",
     "features/feedback/feedback.css",
-    "features/feedback/feedback.js"
+    "features/feedback/feedback.js",
+    "features/tools/cookie-history/cookie-history.html",
+    "features/tools/cookie-history/cookie-history.css",
+    "features/tools/cookie-history/cookie-history.js"
   ]) {
     assert.ok(existsSync(new URL(`../${path}`, import.meta.url)), `${path} is missing`);
   }
@@ -65,8 +69,10 @@ test("manifest is valid Manifest V3 JSON", () => {
   assert.match(frameResume, /force: true/);
   assert.match(frameResume, /getContinueWatchingPosition/);
   assert.match(frameResume, /setContinueWatchingPosition/);
-  assert.deepEqual(manifest.content_scripts[2].js, ["features/security/crypto-guard-main.js"]);
-  assert.equal(manifest.content_scripts[2].world, "MAIN");
+  assert.deepEqual(manifest.content_scripts[2].js, ["features/analytics/frame-metrics.js"]);
+  assert.equal(manifest.content_scripts[2].all_frames, true);
+  assert.deepEqual(manifest.content_scripts[3].js, ["features/security/crypto-guard-main.js"]);
+  assert.equal(manifest.content_scripts[3].world, "MAIN");
   assert.ok(existsSync(new URL("../features/security/crypto-guard-main.js", import.meta.url)));
   for (const path of [
     "features/security/link-safety.js",
@@ -98,6 +104,7 @@ test("standalone extension pages use the exact shield header asset", () => {
     "features/analytics/activity/activity.html",
     "features/analytics/statistics/statistics.html",
     "features/tools/receipt-details/receipt-details.html",
+    "features/tools/cookie-history/cookie-history.html",
     "ui/options/options.html",
     "features/feedback/feedback.html"
   ]) {
@@ -143,10 +150,33 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.doesNotMatch(popupHTML, />MACCLEANER</);
   assert.match(popupHTML, /class="tool-button"/);
   assert.match(popupHTML, /id="cookies-panel"/);
+  assert.match(popupHTML, /id="open-cookie-history"/);
+  assert.doesNotMatch(popupHTML, /id="export-all-cookies"|class="storage-map"|class="cookie-changes"|class="cookie-advanced"/);
   assert.match(popupHTML, /id="tab-detail-panel"/);
   assert.match(popupHTML, /id="previous-tabs"/);
   assert.doesNotMatch(popupHTML, /id="blocked-today"/);
-  assert.match(popupJS, /chrome\.permissions\.request\(\{ permissions: \["cookies"\]/);
+  assert.match(popupJS, /ensureOptionalPermission\("cookies", "cookiesPermissionPrompt"\)/);
+  const toolIds = [...popupHTML.matchAll(/data-tool-id="([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(new Set(toolIds).size, toolIds.length, "Each Tools card must represent one unique tool");
+  for (const id of ["site-reset", "review"]) assert.ok(toolIds.includes(id));
+  assert.ok(!toolIds.includes("metadata"));
+  for (const removedId of ["safe-screenshot", "stale-tabs", "bookmark-health"]) assert.ok(!toolIds.includes(removedId));
+  assert.match(popupHTML, /id="site-reset-panel"/);
+  assert.match(popupHTML, /id="review-panel"/);
+  assert.match(popupJS, /siteResetButton\.addEventListener\("click", openSiteReset\)/);
+  assert.match(popupJS, /reviewButton\.addEventListener\("click", openReview\)/);
+  assert.doesNotMatch(popupJS, /features\/tools\/(?:safe-screenshot|site-reset|stale-tabs|bookmark-health)\//);
+  assert.match(serviceWorker, /kind === "scheduleSiteReset"/);
+  assert.match(serviceWorker, /handlePendingSiteResetsForClosedTab\(tabId\)/);
+  assert.match(serviceWorker, /SITE_RESET_ALARM_PREFIX/);
+  assert.match(serviceWorker, /!chrome\.cookies\?\.onChanged/);
+  assert.match(serviceWorker, /chrome\.permissions\.onAdded\.addListener/);
+  assert.match(serviceWorker, /withTimeout\([\s\S]*chrome\.tabs\.sendMessage[\s\S]*1_500/);
+  assert.match(serviceWorker, /collectSnapshot\(\)[\s\S]*\.catch\(async \(error\)/);
+  assert.match(popupJS, /cookieRevealValue/);
+  assert.doesNotMatch(popupJS, /cell\.textContent = cookie\.value/);
+  assert.match(popupJS, /cookie-flags-text/);
+  assert.match(popupJS, /features\/tools\/cookie-history\/cookie-history\.html/);
   assert.match(popupJS, /const MAX_VISIBLE_TABS = 4;/);
   assert.match(popupJS, /kind: "getSitePrivacyReceipt"/);
   assert.match(popupJS, /kind: "getContinueWatchingList"/);
@@ -154,15 +184,8 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(popupJS, /const TOOLS_PER_PAGE = 4/);
   assert.match(popupJS, /scrollToToolPage/);
   assert.match(popupJS, /openExtensionTab/);
-  assert.match(popupJS, /openExtensionWindow/);
-  assert.match(popupJS, /extensionWindowOpens = new Map\(\)/);
-  assert.match(popupJS, /extensionWindowOpens\.get\(key\)/);
-  assert.match(popupJS, /finally\(\(\) =>/);
   assert.match(popupJS, /current\.pathname === target\.pathname/);
-  assert.match(popupJS, /matches\.slice\(1\)/);
-  assert.match(popupJS, /tabId: existing\.id/);
-  assert.match(popupJS, /owner\?\.type !== "popup"/);
-  assert.match(popupJS, /target\.pathname\.endsWith\("\/popup\.html"\)/);
+  assert.doesNotMatch(popupJS, /chrome\.windows\.create/);
   assert.doesNotMatch(popupJS, /ensureDetachedPopupWindow|refocusDetachedPopupWhenClosed/);
   assert.doesNotMatch(popupJS, /getURL\("popup\.html"\)/);
   assert.match(popupJS, /requestAnimationFrame\(step\)/);
@@ -241,6 +264,7 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(serviceWorker, /BLOCKING_STATISTICS_BATCH_SIZE = 500/);
   assert.match(serviceWorker, /chrome\.webRequest\.onBeforeRequest/);
   assert.match(serviceWorker, /getSitePrivacyReceipt/);
+  assert.match(serviceWorker, /const domain = registrableDomainFromURL\(sender\.url\)/);
   assert.match(serviceWorker, /verifyCryptoGuardPaste/);
   assert.match(serviceWorker, /CONTINUE_WATCHING_KEY/);
   assert.match(serviceWorker, /getContinueWatchingList/);
@@ -249,11 +273,11 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(serviceWorker, /chrome\.action\.setBadgeText\(\{ text: "" \}\)/);
   assert.doesNotMatch(serviceWorker, /setBadgeBackgroundColor/);
   assert.match(serviceWorker, /const previous = await extensionEnabledStorage\(\)/);
-  assert.match(popupHTML, /id="statistics-button"/);
+  assert.doesNotMatch(popupHTML, /id="statistics-button"/);
   assert.match(popupJS, /statistics\.html/);
   assert.match(popupJS, /activity\.html/);
   assert.match(popupJS, /feedback\.html/);
-  assert.match(popupJS, /openExtensionWindow\(feedbackURL, \{ width: 580, height: 740 \}\)/);
+  assert.match(popupJS, /openExtensionTab\(feedbackURL\)/);
   assert.match(popupJS, /type: "site"/);
   assert.doesNotMatch(popupJS, /activityButton|activityTabButton|reportSiteButton/);
   assert.doesNotMatch(popupJS, /workspace\.html|sidePanel/);
@@ -349,7 +373,11 @@ test("link warning page exposes compact safe-first actions", () => {
   assert.match(script, /allowLinkSafetyDomain/);
   assert.match(script, /action === "block"/);
   assert.match(script, /isRussian/);
-  assert.match(script, /Не вводите пароль, seed-фразу/);
+  assert.match(script, /domain: trustedHost/);
+  assert.match(html, /id="more-button"[^>]+aria-haspopup="menu"/);
+  assert.match(html, /id="more-menu"[^>]+role="menu"/);
+  assert.match(script, /ArrowDown/);
+  assert.doesNotMatch(script, /continueButton\.addEventListener\("click", \(\) => \{\s*if \(confirm/);
   assert.match(css, /\.warning-panel/);
   assert.match(css, /\.signal svg/);
   assert.match(buildScript, /"features"/);
@@ -367,6 +395,8 @@ test("activity and feedback surfaces are bilingual and privacy explicit", () => 
   assert.match(activity, /Аналитика посещений/);
   assert.match(feedbackHTML, /type="email"/);
   assert.match(feedbackHTML, /value="site"/);
+  assert.match(feedbackHTML, /class="feedback-panel"/);
+  assert.match(feedbackHTML, /<fieldset class="type-picker">/);
   assert.match(feedbackHTML, /accept="image\/png,image\/jpeg,image\/webp"/);
   assert.match(feedback, /FEEDBACK_RECIPIENT_EMAIL/);
   assert.match(feedback, /FEEDBACK_ENDPOINT_URL/);

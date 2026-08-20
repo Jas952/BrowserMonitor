@@ -4,6 +4,7 @@ const todayTotal = document.querySelector("#today-total");
 const sevenDayTotal = document.querySelector("#seven-day-total");
 const networkTotal = document.querySelector("#network-total");
 const videoTotal = document.querySelector("#video-total");
+const blockedShare = document.querySelector("#blocked-share");
 const todayBreakdown = document.querySelector("#today-breakdown");
 const chart = document.querySelector("#activity-chart");
 const topSites = document.querySelector("#top-sites");
@@ -14,6 +15,10 @@ const siteCount = document.querySelector("#site-count");
 const resourceCount = document.querySelector("#resource-count");
 const updatedAt = document.querySelector("#updated-at");
 const clearStatistics = document.querySelector("#clear-statistics");
+const blockingSources = document.querySelector("#blocking-sources");
+const blockingCategories = document.querySelector("#blocking-categories");
+const journalRows = document.querySelector("#journal-rows");
+let currentSite = null;
 
 let language = "en";
 let refreshTimer = null;
@@ -44,6 +49,7 @@ function render(summary) {
   sevenDayTotal.textContent = number(summary.sevenDayTotal);
   networkTotal.textContent = number(today.types.network);
   videoTotal.textContent = number(today.types.video + today.types.sponsor);
+  blockedShare.textContent = `${number(summary.blockedShare)}%`;
   todayBreakdown.textContent = t("statisticsBreakdown", { network: number(today.types.network), video: number(today.types.video), sponsor: number(today.types.sponsor) });
   updatedAt.textContent = summary.updatedAt
     ? new Date(summary.updatedAt).toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
@@ -73,6 +79,8 @@ function render(summary) {
 
   renderList(topSites, summary.topSites);
   renderList(blockedResources, summary.resources);
+  renderList(blockingSources, summary.sources ?? []);
+  renderList(blockingCategories, summary.categories ?? []);
   topSites.hidden = summary.topSites.length === 0;
   blockedResources.hidden = summary.resources.length === 0;
   topSitesEmpty.hidden = summary.topSites.length > 0;
@@ -81,10 +89,42 @@ function render(summary) {
   resourceCount.textContent = number(summary.resources.length);
 }
 
+async function refreshJournal() {
+  const result = await chrome.runtime.sendMessage({ kind: "getBlockingJournal" });
+  journalRows.replaceChildren(...(result.entries ?? []).slice(0, 200).map((entry) => {
+    const row = document.createElement("tr");
+    for (const value of [new Date(entry.createdAt).toLocaleTimeString(language), entry.site, entry.resource, entry.source, entry.category]) {
+      const cell = document.createElement("td"); cell.textContent = value || "—"; row.append(cell);
+    }
+    return row;
+  }));
+}
+
+async function refreshDiagnosis() {
+  const tabs = await chrome.tabs.query({});
+  currentSite = tabs
+    .filter((tab) => tab.id && /^https?:/i.test(tab.url ?? ""))
+    .sort((left, right) => Number(right.lastAccessed ?? 0) - Number(left.lastAccessed ?? 0))[0] ?? null;
+  if (!currentSite?.url?.startsWith("http")) return;
+  const [state, settings] = await Promise.all([
+    chrome.runtime.sendMessage({ kind: "getContentBlockingState", url: currentSite.url, tabId: currentSite.id }),
+    chrome.runtime.sendMessage({ kind: "getBrowserProtectionSettings" })
+  ]);
+  document.querySelector("#diagnosis-signals").replaceChildren(...[
+    ["EasyList", state.enabled && settings.adFilterEnabled],
+    ["EasyPrivacy", state.enabled && settings.privacyFilterEnabled],
+    ["Cosmetic filters", state.enabled && settings.cosmeticFilteringEnabled],
+    ["Custom rules", state.enabled && Number(state.additionalRuleCount) > 0]
+  ].map(([label, active]) => {
+    const badge = document.createElement("span"); badge.className = active ? "active" : ""; badge.textContent = `${label}: ${active ? "on" : "off"}`; return badge;
+  }));
+}
+
 async function refresh() {
   clearTimeout(refreshTimer);
   refreshTimer = null;
   render(await chrome.runtime.sendMessage({ kind: "getBlockingStatistics" }));
+  await Promise.all([refreshJournal(), refreshDiagnosis()]);
 }
 
 function scheduleRefresh() {
@@ -100,6 +140,22 @@ clearStatistics.addEventListener("click", async () => {
   } finally {
     clearStatistics.disabled = false;
   }
+});
+document.querySelector("#refresh-journal").addEventListener("click", refreshJournal);
+document.querySelector("#clear-journal").addEventListener("click", async () => { await chrome.runtime.sendMessage({ kind: "clearBlockingJournal" }); await refreshJournal(); });
+document.querySelector("#bypass-once").addEventListener("click", async () => {
+  if (!currentSite?.url) return;
+  const domain = new URL(currentSite.url).hostname;
+  await chrome.runtime.sendMessage({ kind: "bypassSiteOnce", domain });
+  await chrome.tabs.reload(currentSite.id);
+  document.querySelector("#diagnosis-status").textContent = t("bypassApplied");
+});
+document.querySelector("#exclude-site").addEventListener("click", async () => {
+  if (!currentSite?.url) return;
+  const domain = new URL(currentSite.url).hostname;
+  await chrome.runtime.sendMessage({ kind: "setSiteAllowlisted", domain, url: currentSite.url, allowlisted: true });
+  document.querySelector("#diagnosis-status").textContent = t("siteExcluded");
+  await refreshDiagnosis();
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {

@@ -7,24 +7,29 @@
   <link rel="stylesheet" href="feedback.css">
 </head>
 <body>
-  <header><img src="../../icons/browser-monitor-shield-48.png" alt=""><div><h1 id="feedback-title">Send feedback</h1><p id="feedback-subtitle">Suggest a tool or report a problem</p></div></header>
-  <main>
-    <div class="type-picker" role="radiogroup" aria-label="Request type">
-      <label><input type="radio" name="feedback-type" value="feature" checked><span id="feature-type">New tool</span></label>
-      <label><input type="radio" name="feedback-type" value="bug"><span id="bug-type">Problem</span></label>
-      <label><input type="radio" name="feedback-type" value="site"><span id="site-type">Site filters</span></label>
-    </div>
-    <label class="field"><span id="email-label">Your email</span><input id="feedback-email" type="email" autocomplete="email" maxlength="254" placeholder="name@example.com"><small id="email-note" class="email-note">This email is used only so the developer can reply to you.</small></label>
-    <label class="field"><span id="message-label">Describe your request</span><textarea id="feedback-message" rows="8" maxlength="5000" required></textarea><small id="message-limit">0 / 5000</small></label>
-    <div class="attachment">
-      <div><strong id="attachment-title">Screenshot</strong><p id="attachment-detail">PNG, JPEG or WebP up to 2 MB. It is sent only with this request.</p></div>
-      <button id="choose-feedback-image" type="button">Choose image</button>
-      <input id="feedback-image" type="file" accept="image/png,image/jpeg,image/webp" hidden>
-    </div>
-    <div id="attachment-preview" class="attachment-preview" hidden><img alt=""><span></span><button type="button" aria-label="Remove attachment">×</button></div>
-    <p id="feedback-status" class="status" role="status" aria-live="polite"></p>
-  </main>
-  <footer><p id="delivery-note">Sending delivers this request directly to the developer email through the Browser Monitor feedback endpoint.</p><button id="send-feedback" type="button">Send request</button></footer>
+  <div class="feedback-shell">
+    <section class="feedback-panel" aria-labelledby="feedback-title">
+      <header><img src="../../icons/browser-monitor-shield-48.png" alt=""><div><h1 id="feedback-title">Send feedback</h1><p id="feedback-subtitle">Suggest a tool or report a problem</p></div></header>
+      <main>
+        <fieldset class="type-picker">
+          <legend>Request type</legend>
+          <label><input type="radio" name="feedback-type" value="feature" checked><span id="feature-type">New tool</span></label>
+          <label><input type="radio" name="feedback-type" value="bug"><span id="bug-type">Problem</span></label>
+          <label><input type="radio" name="feedback-type" value="site"><span id="site-type">Site filters</span></label>
+        </fieldset>
+        <label class="field"><span id="email-label">Your email</span><input id="feedback-email" type="email" autocomplete="email" maxlength="254" placeholder="name@example.com"><small id="email-note" class="email-note">This email is used only so the developer can reply to you.</small></label>
+        <label class="field"><span id="message-label">Describe your request</span><textarea id="feedback-message" rows="7" maxlength="5000" required></textarea><small id="message-limit">0 / 5000</small></label>
+        <div class="attachment">
+          <div><strong id="attachment-title">Screenshot</strong><p id="attachment-detail">PNG, JPEG or WebP up to 2 MB. It is sent only with this request.</p></div>
+          <button id="choose-feedback-image" type="button">Choose image</button>
+          <input id="feedback-image" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+        </div>
+        <div id="attachment-preview" class="attachment-preview" hidden><img alt=""><span></span><button type="button" aria-label="Remove attachment">×</button></div>
+        <p id="feedback-status" class="status" role="status" aria-live="polite"></p>
+      </main>
+      <footer><p id="delivery-note">Sending delivers this request directly to the developer email through the Browser Monitor feedback endpoint.</p><button id="send-feedback" type="button">Send request</button></footer>
+    </section>
+  </div>
   <script type="module" src="feedback.js"></script>
 </body>
 </html>

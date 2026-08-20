@@ -1,10 +1,4 @@
-const COMMON_PUBLIC_SUFFIXES = new Set([
-  "com", "org", "net", "edu", "gov", "mil", "int", "io", "ai", "app", "dev", "co", "me", "tv", "gg",
-  "ru", "рф", "su", "by", "ua", "kz", "uz", "uk", "de", "fr", "it", "es", "nl", "se", "no", "fi", "pl",
-  "br", "in", "jp", "cn", "au", "ca", "us",
-  "co.uk", "org.uk", "ac.uk", "gov.uk", "com.au", "net.au", "org.au", "co.jp", "com.br", "com.tr",
-  "github.io", "pages.dev", "vercel.app", "appspot.com", "firebaseapp.com", "web.app", "netlify.app"
-]);
+import { confusableSkeleton, publicSuffix, registrableDomain as domainFromPSL, unicodeHostname } from "./domain-intelligence.js";
 
 const URL_SHORTENERS = new Set([
   "bit.ly", "buff.ly", "cutt.ly", "goo.gl", "is.gd", "lnkd.in", "ow.ly", "rebrand.ly", "shorturl.at",
@@ -17,24 +11,65 @@ const SOCIAL_SOURCE_DOMAINS = new Set([
 ]);
 
 const BRAND_DOMAINS = new Map([
+  ["adobe", "adobe.com"],
+  ["amazon", "amazon.com"],
   ["apple", "apple.com"],
+  ["atlassian", "atlassian.com"],
+  ["avito", "avito.ru"],
   ["binance", "binance.com"],
+  ["bitbucket", "bitbucket.org"],
+  ["booking", "booking.com"],
+  ["cloudflare", "cloudflare.com"],
   ["coinbase", "coinbase.com"],
   ["discord", "discord.com"],
+  ["dropbox", "dropbox.com"],
+  ["ebay", "ebay.com"],
   ["facebook", "facebook.com"],
+  ["figma", "figma.com"],
   ["github", "github.com"],
+  ["gitlab", "gitlab.com"],
   ["google", "google.com"],
+  ["gosuslugi", "gosuslugi.ru"],
+  ["icloud", "icloud.com"],
   ["instagram", "instagram.com"],
   ["linkedin", "linkedin.com"],
+  ["mailru", "mail.ru"],
   ["metamask", "metamask.io"],
   ["microsoft", "microsoft.com"],
+  ["mozilla", "mozilla.org"],
+  ["notion", "notion.so"],
+  ["office", "office.com"],
   ["opensea", "opensea.io"],
+  ["outlook", "outlook.com"],
   ["paypal", "paypal.com"],
+  ["proton", "proton.me"],
+  ["reddit", "reddit.com"],
+  ["sberbank", "sberbank.ru"],
+  ["slack", "slack.com"],
+  ["stackoverflow", "stackoverflow.com"],
   ["steam", "steampowered.com"],
+  ["stripe", "stripe.com"],
   ["telegram", "telegram.org"],
+  ["tiktok", "tiktok.com"],
+  ["tbank", "tbank.ru"],
   ["twitter", "twitter.com"],
+  ["vk", "vk.com"],
+  ["yahoo", "yahoo.com"],
+  ["yandex", "yandex.ru"],
+  ["zoom", "zoom.us"],
   ["youtube", "youtube.com"]
 ]);
+
+export const DEFAULT_TRUSTED_DOMAINS = Object.freeze([...new Set([
+  ...BRAND_DOMAINS.values(),
+  "live.com",
+  "microsoftonline.com",
+  "ok.ru",
+  "protonmail.com",
+  "x.com"
+])].sort());
+
+const KNOWN_TRUSTED_DOMAINS = new Set(DEFAULT_TRUSTED_DOMAINS);
 
 const SUSPICIOUS_WORDS = [
   "airdrop", "bonus", "claim", "connect", "free", "gift", "giveaway", "login", "prize", "promo",
@@ -76,6 +111,22 @@ export function sanitizeLinkSafetyDomains(values, limit = 500) {
   return domains.sort();
 }
 
+export function sanitizeLinkSafetyTrustedHosts(values, limit = 500) {
+  const hosts = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const parsed = parseURLParts(String(value).trim());
+    const hostname = parsed?.hostname ?? "";
+    if (!hostname || hosts.includes(hostname)) continue;
+    hosts.push(hostname);
+    if (hosts.length >= limit) break;
+  }
+  return hosts.sort();
+}
+
+function hostnameMatchesRule(hostname, rule) {
+  return hostname === rule || hostname.endsWith(`.${rule}`);
+}
+
 function rawHostnameFromURL(value) {
   const trimmed = String(value ?? "").trim();
   const match = trimmed.match(/^[a-z][a-z0-9+.-]*:\/\/([^/?#[\]@]+|(?:[^/?#@]*@)?\[[^\]]+\])/i);
@@ -88,14 +139,6 @@ function isIPAddress(hostname) {
     return hostname.split(".").every((part) => Number(part) >= 0 && Number(part) <= 255);
   }
   return /^[a-f0-9:]+$/i.test(hostname) && hostname.includes(":");
-}
-
-function publicSuffixFor(labels) {
-  for (let length = Math.min(labels.length, 3); length >= 1; length -= 1) {
-    const suffix = labels.slice(-length).join(".");
-    if (COMMON_PUBLIC_SUFFIXES.has(suffix)) return suffix;
-  }
-  return labels.at(-1) ?? "";
 }
 
 export function parseURLParts(value) {
@@ -112,14 +155,7 @@ export function parseURLParts(value) {
   const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
   if (!hostname || hostname.length > 253) return null;
   const rawHostname = rawHostnameFromURL(normalizedValue);
-  const labels = hostname.split(".").filter(Boolean);
-  const suffix = isIPAddress(hostname) ? "" : publicSuffixFor(labels);
-  const suffixLength = suffix ? suffix.split(".").length : 0;
-  const registrableDomain = isIPAddress(hostname)
-    ? hostname
-    : labels.length > suffixLength
-      ? labels.slice(-(suffixLength + 1)).join(".")
-      : hostname;
+  const registrableDomain = isIPAddress(hostname) ? hostname : (domainFromPSL(hostname) || hostname);
   const subdomain = hostname === registrableDomain
     ? ""
     : hostname.slice(0, Math.max(0, hostname.length - registrableDomain.length - 1));
@@ -128,6 +164,8 @@ export function parseURLParts(value) {
     protocol: url.protocol,
     hostname,
     rawHostname,
+    unicodeHostname: unicodeHostname(hostname),
+    publicSuffix: isIPAddress(hostname) ? "" : publicSuffix(hostname),
     subdomain,
     registrableDomain,
     pathname: url.pathname,
@@ -143,25 +181,19 @@ function hasMixedLatinCyrillic(value) {
 }
 
 function skeleton(value) {
-  return value
-    .toLowerCase()
-    .replace(/0/g, "o")
-    .replace(/1/g, "l")
-    .replace(/3/g, "e")
-    .replace(/4/g, "a")
-    .replace(/5/g, "s")
-    .replace(/7/g, "t")
+  return confusableSkeleton(value)
+    .replace(/0/g, "o").replace(/1/g, "l").replace(/3/g, "e").replace(/4/g, "a").replace(/5/g, "s").replace(/7/g, "t")
     .replace(/[^a-z0-9]/g, "");
 }
 
 function domainWithoutSuffix(domain) {
   const labels = domain.split(".");
-  const suffix = publicSuffixFor(labels);
+  const suffix = publicSuffix(domain);
   const suffixLength = suffix ? suffix.split(".").length : 1;
   return labels.slice(0, Math.max(1, labels.length - suffixLength)).join(".");
 }
 
-function nestedRedirectURL(parts) {
+function directNestedRedirectURL(parts) {
   for (const [name, value] of parts.searchParams.entries()) {
     if (!REDIRECT_PARAMETERS.has(name.toLowerCase())) continue;
     try {
@@ -174,13 +206,29 @@ function nestedRedirectURL(parts) {
   return "";
 }
 
+function nestedRedirectChain(parts, maximumDepth = 4) {
+  const chain = [];
+  const seen = new Set([parts.href]);
+  let current = parts;
+  for (let depth = 0; depth < maximumDepth; depth += 1) {
+    const nestedURL = directNestedRedirectURL(current);
+    if (!nestedURL || seen.has(nestedURL)) break;
+    const nested = parseURLParts(nestedURL);
+    if (!nested) break;
+    chain.push(nested.href);
+    seen.add(nested.href);
+    current = nested;
+  }
+  return chain;
+}
+
 function addReason(reasons, severity, code, message) {
   reasons.push({ severity, code, message });
 }
 
 export function evaluateLinkSafety(url, options = {}) {
   const settings = normalizeLinkSafetySettings(options.settings ?? DEFAULT_LINK_SAFETY_SETTINGS);
-  const allowedDomains = new Set(sanitizeLinkSafetyDomains(options.allowedDomains ?? []));
+  const allowedHosts = sanitizeLinkSafetyTrustedHosts(options.allowedDomains ?? []);
   const blockedDomains = new Set(sanitizeLinkSafetyDomains(options.blockedDomains ?? []));
   const parts = parseURLParts(url);
   if (!parts) return { action: "allow", risk: "none", score: 0, reasons: [], url: "" };
@@ -188,8 +236,12 @@ export function evaluateLinkSafety(url, options = {}) {
   const registrableDomain = parts.registrableDomain;
   const source = parseURLParts(options.sourceUrl ?? "");
   const sourceDomain = source?.registrableDomain ?? "";
+  const redirectChain = settings.warnRedirects ? nestedRedirectChain(parts) : [];
+  const hasCrossSiteRedirect = redirectChain.some((nestedURL) => (
+    parseURLParts(nestedURL)?.registrableDomain !== registrableDomain
+  ));
 
-  if (!settings.enabled || allowedDomains.has(registrableDomain)) {
+  if (!settings.enabled) {
     return { action: "allow", risk: "none", score: 0, reasons, url: parts.href, registrableDomain };
   }
 
@@ -205,6 +257,11 @@ export function evaluateLinkSafety(url, options = {}) {
       registrableDomain,
       sourceDomain
     };
+  }
+
+  if (allowedHosts.some((rule) => hostnameMatchesRule(parts.hostname, rule))
+      || (KNOWN_TRUSTED_DOMAINS.has(registrableDomain) && !hasCrossSiteRedirect)) {
+    return { action: "allow", risk: "none", score: 0, reasons, url: parts.href, hostname: parts.hostname, registrableDomain };
   }
 
   if (isIPAddress(parts.hostname)) {
@@ -223,7 +280,7 @@ export function evaluateLinkSafety(url, options = {}) {
     addReason(reasons, "medium", "shortener", "The link uses a URL shortener, so the destination is hidden.");
   }
 
-  if (settings.warnRedirects && nestedRedirectURL(parts)) {
+  if (hasCrossSiteRedirect) {
     addReason(reasons, "medium", "redirect-param", "The link contains a nested redirect URL.");
   }
 
@@ -232,8 +289,8 @@ export function evaluateLinkSafety(url, options = {}) {
   }
 
   const registrableBase = skeleton(domainWithoutSuffix(registrableDomain));
-  const fullHostSkeleton = skeleton(parts.hostname);
-  const subdomainSkeleton = skeleton(parts.subdomain);
+  const fullHostSkeleton = skeleton(parts.unicodeHostname);
+  const subdomainSkeleton = skeleton(unicodeHostname(parts.subdomain));
   if (settings.warnLookalikes) {
     for (const [brand, officialDomain] of BRAND_DOMAINS) {
       if (registrableDomain === officialDomain || registrableDomain.endsWith(`.${officialDomain}`)) continue;
@@ -282,8 +339,12 @@ export function evaluateLinkSafety(url, options = {}) {
     reasons,
     url: parts.href,
     hostname: parts.hostname,
+    unicodeHostname: parts.unicodeHostname,
+    rawHostname: parts.rawHostname,
+    publicSuffix: parts.publicSuffix,
     registrableDomain,
     sourceDomain,
-    nestedRedirectURL: nestedRedirectURL(parts)
+    nestedRedirectURL: redirectChain.at(-1) ?? "",
+    redirectDepth: redirectChain.length
   };
 }
