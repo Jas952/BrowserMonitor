@@ -11,9 +11,11 @@
     resourceCount: 0,
     transferBytes: 0,
     layoutShiftScore: 0,
-    backgroundEventCount: 0
+    backgroundEventCount: 0,
+    hiddenSince: document.visibilityState === "hidden" ? performance.now() : null
   };
   const observers = [];
+  const recentPerformanceEvents = [];
   const mediaStates = new Map();
   const animationStates = new Map();
   let ecoObserver = null;
@@ -60,7 +62,10 @@
   let imageSwapCustomImages = [];
   const continueWatchingVideos = new WeakMap();
   let continueWatchingIdentityTimer = null;
+  let continueWatchingEnabled = false;
+  let cryptoGuardEnabled = false;
   let cryptoGuardCopy = null;
+  let activitySampleTimer = null;
 
   const PROTECTION_STYLE_ID = "browser-monitor-protection-style";
   const ACTIVATION_OVERLAY_ID = "browser-monitor-activation-overlay";
@@ -136,6 +141,7 @@
   let sponsorSegments = [];
   let sponsorRequestID = "";
   let sponsorVideo = null;
+  let trackingCleanerEnabled = true;
   const skippedSponsorSegments = new Set();
 
   function effectiveMonitoringEnabled(value) {
@@ -169,16 +175,35 @@
     }, 1_000);
   }
 
+  function cleanClickedURL(rawURL) {
+    if (!trackingCleanerEnabled) return { url: rawURL, removed: [] };
+    try {
+      const url = new URL(rawURL);
+      const removed = [];
+      for (const key of [...url.searchParams.keys()]) {
+        if (/^(?:utm_.+|fbclid|gclid|dclid|gbraid|wbraid|msclkid|yclid|mc_cid|mc_eid|igshid|ref_src|ref_url)$/i.test(key)) {
+          removed.push(key);
+          url.searchParams.delete(key);
+        }
+      }
+      return { url: url.href, removed };
+    } catch {
+      return { url: rawURL, removed: [] };
+    }
+  }
+
   function handleLinkSafetyClick(event) {
     if (linkSafetyNavigationInProgress) return;
     const anchor = closestAnchor(event.target);
     if (!shouldCheckLinkClick(event, anchor)) return;
-    const targetUrl = anchor.href;
+    const cleaned = cleanClickedURL(anchor.href);
+    const targetUrl = cleaned.url;
     event.preventDefault();
     chrome.runtime.sendMessage({
       kind: "evaluateLinkSafety",
       url: targetUrl,
       sourceUrl: location.href
+      ,removedTrackingParameters: cleaned.removed
     }).then((response) => {
       if (["warn", "block"].includes(response?.action) && response.warningUrl) {
         chrome.runtime.sendMessage({
@@ -844,15 +869,21 @@
       skippedSponsorSegments.clear();
     }
     connectSponsorVideo();
-    if (!videoID || sponsorRequestID === videoID) return;
+    if (!videoID) {
+      if (isYouTubePage()) chrome.runtime.sendMessage({ kind: "recordSponsorStatus", status: protectionSettings.sponsorSegmentSkippingEnabled ? "none" : "disabled" }).catch(() => {});
+      return;
+    }
+    if (sponsorRequestID === videoID) return;
     sponsorRequestID = videoID;
     chrome.runtime.sendMessage({ kind: "getSponsorSegments", videoId: videoID })
       .then((response) => {
         if (sponsorVideoID !== videoID) return;
         sponsorSegments = Array.isArray(response?.segments) ? response.segments : [];
+        chrome.runtime.sendMessage({ kind: "recordSponsorStatus", status: response?.status ?? "unavailable" }).catch(() => {});
         handleSponsorTimeUpdate();
       })
       .catch(() => {
+        chrome.runtime.sendMessage({ kind: "recordSponsorStatus", status: "unavailable" }).catch(() => {});
         if (sponsorRequestID === videoID) sponsorRequestID = "";
       });
   }
@@ -1218,6 +1249,13 @@
     }
   }
 
+  function rememberPerformanceEvent(type, values = {}) {
+    recentPerformanceEvents.push({ type, at: Date.now(), background: document.hidden, ...values });
+    const cutoff = Date.now() - 60_000;
+    while (recentPerformanceEvents[0]?.at < cutoff) recentPerformanceEvents.shift();
+    if (recentPerformanceEvents.length > 300) recentPerformanceEvents.splice(0, recentPerformanceEvents.length - 300);
+  }
+
   function observe(type, callback) {
     if (!PerformanceObserver.supportedEntryTypes.includes(type)) return;
     try {
@@ -1240,6 +1278,7 @@
         for (const script of entry.scripts ?? []) {
           state.forcedStyleAndLayoutDurationMS += script.forcedStyleAndLayoutDuration ?? 0;
         }
+        rememberPerformanceEvent("long-frame", { durationMS: entry.blockingDuration ?? entry.duration ?? 0 });
         countBackgroundEvent();
       }
     });
@@ -1247,7 +1286,8 @@
     observe("resource", (entries) => {
       for (const entry of entries) {
         state.resourceCount += 1;
-        state.transferBytes += entry.transferSize ?? 0;
+        state.transferBytes += Math.max(entry.transferSize ?? 0, entry.encodedBodySize ?? 0);
+        rememberPerformanceEvent("request", { bytes: Math.max(entry.transferSize ?? 0, entry.encodedBodySize ?? 0), initiatorType: entry.initiatorType ?? "other" });
         countBackgroundEvent();
       }
     });
@@ -1256,6 +1296,7 @@
       for (const entry of entries) {
         if (!entry.hadRecentInput) {
           state.layoutShiftScore += entry.value ?? 0;
+          rememberPerformanceEvent("layout-shift", { value: entry.value ?? 0 });
           countBackgroundEvent();
         }
       }
@@ -1301,24 +1342,28 @@
     if (ecoScanTimer || !state.ecoModeEnabled) return;
     ecoScanTimer = setTimeout(() => {
       ecoScanTimer = null;
-      if (state.ecoModeEnabled) pausePageActivity();
+      if (state.ecoModeEnabled && state.ecoModeLevel !== "limit") pausePageActivity();
     }, document.hidden ? ECO_HIDDEN_SCAN_DELAY_MS : ECO_SCAN_DELAY_MS);
   }
 
-  function setEcoMode(enabled) {
+  function setEcoMode(enabled, level = "limit") {
     state.ecoModeEnabled = enabled;
+    state.ecoModeLevel = level;
     let style = document.querySelector("#browser-monitor-eco-style");
     if (enabled) {
-      if (!style) {
+      if (level !== "limit" && !style) {
         style = document.createElement("style");
         style.id = "browser-monitor-eco-style";
         style.textContent = "*, *::before, *::after { animation-play-state: paused !important; scroll-behavior: auto !important; }";
         (document.head || document.documentElement).append(style);
       }
-      pausePageActivity();
+      if (level !== "limit") pausePageActivity();
       ecoObserver?.disconnect();
-      ecoObserver = new MutationObserver(scheduleEcoModeScan);
-      ecoObserver.observe(document.documentElement, { childList: true, subtree: true });
+      ecoObserver = null;
+      if (level !== "limit") {
+        ecoObserver = new MutationObserver(scheduleEcoModeScan);
+        ecoObserver.observe(document.documentElement, { childList: true, subtree: true });
+      }
     } else {
       ecoObserver?.disconnect();
       ecoObserver = null;
@@ -1342,8 +1387,8 @@
     const russian = searchProtectionLanguage === "ru";
     if (kind === "cryptoMismatch") {
       return russian
-        ? "Crypto Guard остановил вставку: адрес отличается от недавно скопированного."
-        : "Crypto Guard stopped the paste: the address differs from the one copied recently.";
+        ? `Crypto Guard остановил замену «${values.original}» на «${values.changed}».`
+        : `Crypto Guard stopped “${values.original}” from being replaced with “${values.changed}”.`;
     }
     if (kind === "cryptoCleaned") {
       return russian
@@ -1355,6 +1400,11 @@
         ? "Crypto Guard не смог безопасно скопировать адрес. Скопируйте его ещё раз."
         : "Crypto Guard could not copy the address safely. Please copy it again.";
     }
+    if (kind === "clipboardBlocked") return russian ? "Сайт попытался заблокировать обычную вставку. Browser Monitor восстановил текст." : "The site tried to block a normal paste. Browser Monitor restored the text.";
+    if (kind === "clipboardChanged") return russian
+      ? `Скопировано: “${values.original}”. Сайт попытался заменить на: “${values.changed}”.`
+      : `Copied: “${values.original}”. The site tried to replace it with: “${values.changed}”.`;
+    if (kind === "clipboardIntercepted") return russian ? "Сайт перехватил событие буфера обмена. Содержимое не отправлялось из браузера." : "The site intercepted a clipboard event. Clipboard content did not leave the browser.";
     return "";
   }
 
@@ -1445,7 +1495,7 @@
       ? `Вы остановились на ${time}. Позиция хранится только локально.`
       : `You stopped at ${time}. The position is stored locally only.`;
     const goButton = shadow.querySelector(".go");
-    goButton.textContent = russian ? "Перейти к плееру" : "Go to player";
+    goButton.textContent = russian ? `Продолжить с ${time}` : `Resume at ${time}`;
     goButton.addEventListener("click", () => {
       const targetURL = continueWatchingResumeURL(url, position);
       if (targetURL && targetURL !== location.href) {
@@ -1476,9 +1526,40 @@
     return document.getSelection()?.toString() ?? "";
   }
 
+  function compactClipboardText(value) {
+    const text = String(value ?? "").replace(/\s+/g, " ").trim();
+    return text.length <= 48 ? text : `${text.slice(0, 22)}…${text.slice(-22)}`;
+  }
+
+  function watchClipboardCopy(event) {
+    if (!cryptoGuardEnabled) return;
+    const original = copiedSelectionText(event);
+    if (!original || globalThis.BrowserMonitorPageGuard?.findWalletAddress(original)) return;
+    setTimeout(() => {
+      const changed = event.clipboardData?.getData("text/plain") ?? "";
+      if (event.defaultPrevented && changed && changed !== original) {
+        showPageNotice("clipboardChanged", { original: compactClipboardText(original), changed: compactClipboardText(changed) });
+      } else if (event.defaultPrevented) {
+        showPageNotice("clipboardIntercepted");
+      }
+    });
+  }
+
+  function watchClipboardPaste(event) {
+    if (!cryptoGuardEnabled) return;
+    const value = event.clipboardData?.getData("text/plain") ?? "";
+    if (!value || globalThis.BrowserMonitorPageGuard?.findWalletAddress(value)) return;
+    setTimeout(() => {
+      if (!event.defaultPrevented) return;
+      if (insertPastedText(event.target, value)) showPageNotice("clipboardBlocked");
+      else showPageNotice("clipboardIntercepted");
+    });
+  }
+
   async function rememberCryptoCopy(address) {
+    if (!cryptoGuardEnabled) return;
     const fingerprint = await sha256(address.value);
-    cryptoGuardCopy = { fingerprint, family: address.family, expiresAt: Date.now() + CRYPTO_GUARD_COPY_TTL_MS };
+    cryptoGuardCopy = { fingerprint, family: address.family, value: address.value, expiresAt: Date.now() + CRYPTO_GUARD_COPY_TTL_MS };
     await chrome.runtime.sendMessage({
       kind: "rememberCryptoGuardCopy",
       fingerprint,
@@ -1487,6 +1568,7 @@
   }
 
   function handleCryptoCopy(event) {
+    if (!cryptoGuardEnabled) return;
     const address = globalThis.BrowserMonitorPageGuard?.findWalletAddress(copiedSelectionText(event));
     if (!address || !event.clipboardData) return;
     try {
@@ -1534,6 +1616,7 @@
   }
 
   function handleCryptoPaste(event) {
+    if (!cryptoGuardEnabled) return;
     const address = globalThis.BrowserMonitorPageGuard?.findWalletAddress(event.clipboardData?.getData("text/plain"));
     if (!address) return;
     event.preventDefault();
@@ -1544,7 +1627,7 @@
       if (cryptoGuardCopy?.expiresAt > Date.now()) {
         result = {
           known: true,
-          matches: cryptoGuardCopy.family !== address.family || cryptoGuardCopy.fingerprint === fingerprint
+          matches: cryptoGuardCopy.family === address.family && cryptoGuardCopy.fingerprint === fingerprint
         };
       } else {
         result = await chrome.runtime.sendMessage({
@@ -1554,7 +1637,10 @@
         }).catch(() => ({ known: false, matches: true }));
       }
       if (result?.known && result.matches === false) {
-        showPageNotice("cryptoMismatch");
+        showPageNotice("cryptoMismatch", {
+          original: compactClipboardText(cryptoGuardCopy?.value ?? "known address"),
+          changed: compactClipboardText(address.value)
+        });
         return;
       }
       if (!insertPastedText(target, address.value)) showPageNotice("cryptoFailed");
@@ -1679,6 +1765,7 @@
   }
 
   async function initializeContinueWatching(video) {
+    if (!continueWatchingEnabled) return;
     if (!(video instanceof HTMLVideoElement) || isAdvertisementVideo(video)) return;
     if (!Number.isFinite(video.duration) || video.duration < 120) return;
     const classification = continueWatchingClassification(video);
@@ -1709,6 +1796,7 @@
   }
 
   function saveContinueWatching(video, { completed = false, force = false } = {}) {
+    if (!continueWatchingEnabled) return;
     const state = continueWatchingVideos.get(video);
     if (!state || !Number.isFinite(video.duration) || video.duration < 120) return;
     const now = Date.now();
@@ -1739,6 +1827,7 @@
   }
 
   function scheduleContinueWatchingIdentityCheck() {
+    if (!continueWatchingEnabled) return;
     clearTimeout(continueWatchingIdentityTimer);
     continueWatchingIdentityTimer = setTimeout(() => {
       continueWatchingIdentityTimer = null;
@@ -1748,17 +1837,43 @@
     }, 120);
   }
 
-  function pagePrivacySignals() {
+  function storageSizeBytes(storage) {
+    let bytes = 0;
+    try {
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index) ?? "";
+        bytes += new Blob([key, storage.getItem(key) ?? ""]).size;
+      }
+    } catch {}
+    return bytes;
+  }
+
+  async function pagePrivacySignals() {
     let firstPartyCookies = 0;
     let localStorageKeys = 0;
     let sessionStorageKeys = 0;
+    let localStorageBytes = 0;
+    let sessionStorageBytes = 0;
     try { firstPartyCookies = document.cookie ? document.cookie.split(";").filter(Boolean).length : 0; } catch {}
-    try { localStorageKeys = localStorage.length; } catch {}
-    try { sessionStorageKeys = sessionStorage.length; } catch {}
+    try { localStorageKeys = localStorage.length; localStorageBytes = storageSizeBytes(localStorage); } catch {}
+    try { sessionStorageKeys = sessionStorage.length; sessionStorageBytes = storageSizeBytes(sessionStorage); } catch {}
+    const [indexedDatabases, cacheNames, serviceWorkers, estimate] = await Promise.all([
+      globalThis.indexedDB?.databases?.().catch(() => []) ?? Promise.resolve([]),
+      globalThis.caches?.keys?.().catch(() => []) ?? Promise.resolve([]),
+      navigator.serviceWorker?.getRegistrations?.().catch(() => []) ?? Promise.resolve([]),
+      navigator.storage?.estimate?.().catch(() => ({})) ?? Promise.resolve({})
+    ]);
     return {
       firstPartyCookies,
       localStorageKeys,
       sessionStorageKeys,
+      localStorageBytes,
+      sessionStorageBytes,
+      indexedDBCount: indexedDatabases.length,
+      cacheStorageCount: cacheNames.length,
+      serviceWorkerCount: serviceWorkers.length,
+      storageUsageBytes: Number(estimate.usage) || 0,
+      storageQuotaBytes: Number(estimate.quota) || 0,
       notificationPermission: typeof Notification === "undefined" ? "unsupported" : Notification.permission,
       secureContext: window.isSecureContext
     };
@@ -1774,6 +1889,16 @@
 
   function noteActivityInteraction() {
     lastActivityInteractionAt = Date.now();
+    scheduleActivitySample();
+  }
+
+  function scheduleActivitySample() {
+    if (activitySampleTimer || document.visibilityState !== "visible") return;
+    activitySampleTimer = setTimeout(() => {
+      activitySampleTimer = null;
+      recordActivitySample();
+      if (Date.now() - lastActivityInteractionAt <= ACTIVITY_IDLE_MS) scheduleActivitySample();
+    }, ACTIVITY_SAMPLE_MS);
   }
 
   function elementIsVisible(element) {
@@ -1840,13 +1965,18 @@
   document.addEventListener("touchstart", noteActivityInteraction, { capture: true, passive: true });
   document.addEventListener("copy", handleCryptoCopy, true);
   document.addEventListener("paste", handleCryptoPaste, true);
+  document.addEventListener("copy", watchClipboardCopy, true);
+  document.addEventListener("paste", watchClipboardPaste, true);
   window.addEventListener("browser-monitor-crypto-copy", (event) => {
+    if (!cryptoGuardEnabled) return;
     const address = globalThis.BrowserMonitorPageGuard?.detectWalletAddress(event.detail?.value);
     if (!address) return;
     void rememberCryptoCopy(address);
     if (event.detail?.changed) showPageNotice("cryptoCleaned");
   });
-  window.addEventListener("browser-monitor-crypto-copy-error", () => showPageNotice("cryptoFailed"));
+  window.addEventListener("browser-monitor-crypto-copy-error", () => {
+    if (cryptoGuardEnabled) showPageNotice("cryptoFailed");
+  });
   document.addEventListener("loadedmetadata", (event) => {
     if (event.target instanceof HTMLVideoElement) void initializeContinueWatching(event.target);
   }, true);
@@ -1875,8 +2005,13 @@
     document.querySelectorAll("video").forEach((video) => saveContinueWatching(video, { force: true }));
   });
   document.addEventListener("visibilitychange", () => {
+    state.hiddenSince = document.hidden ? (state.hiddenSince ?? performance.now()) : null;
     if (document.hidden) {
+      clearTimeout(activitySampleTimer);
+      activitySampleTimer = null;
       document.querySelectorAll("video").forEach((video) => saveContinueWatching(video, { force: true }));
+    } else {
+      scheduleActivitySample();
     }
   });
   window.addEventListener("popstate", scheduleContinueWatchingIdentityCheck);
@@ -1895,7 +2030,7 @@
   };
   if (document.head) observeContinueWatchingIdentity();
   else document.addEventListener("DOMContentLoaded", observeContinueWatchingIdentity, { once: true });
-  setInterval(recordActivitySample, ACTIVITY_SAMPLE_MS);
+  scheduleActivitySample();
   document.addEventListener("play", (event) => {
     if (protectionSettings.autoplayBlockingEnabled && !pageHasUserGesture) {
       event.target?.pause?.();
@@ -1935,6 +2070,7 @@
     customSubscriptionCosmeticFilters: [],
     imageSwapCustomImages: [],
     linkSafetyAllowedDomains: [],
+    featurePreferences: { cryptoGuardEnabled: true, continueWatchingEnabled: true, trackingCleanerEnabled: true },
     uiPreferences: { language: null, theme: "system" }
   }).then(({
     extensionEnabled: storedExtensionEnabled,
@@ -1946,6 +2082,7 @@
     customSubscriptionCosmeticFilters,
     imageSwapCustomImages: storedCustomImages,
     linkSafetyAllowedDomains,
+    featurePreferences,
     uiPreferences
   }) => {
     temporarySitePauses = pauses;
@@ -1955,6 +2092,10 @@
     contentBlockingEnabled = extensionEnabled && configuredContentBlockingEnabled;
     subscriptionCosmeticFilters = customSubscriptionCosmeticFilters;
     imageSwapCustomImages = Array.isArray(storedCustomImages) ? storedCustomImages.slice(0, 9) : [];
+    cryptoGuardEnabled = featurePreferences?.cryptoGuardEnabled !== false;
+    continueWatchingEnabled = featurePreferences?.continueWatchingEnabled !== false;
+    trackingCleanerEnabled = featurePreferences?.trackingCleanerEnabled !== false;
+    window.dispatchEvent(new CustomEvent("browser-monitor-crypto-guard-state", { detail: { enabled: cryptoGuardEnabled } }));
     updateEnabled(effectiveMonitoringEnabled(configuredMonitoringEnabled));
     applyProtectionSettings(browserProtectionSettings);
     configureHistoryPrivacy(historyPrivacySettings);
@@ -1963,11 +2104,13 @@
       language: uiPreferences?.language || (navigator.language?.toLowerCase().startsWith("ru") ? "ru" : "en"),
       trustedDomains: linkSafetyAllowedDomains
     });
-    document.querySelectorAll("video").forEach((video) => {
-      if (video.readyState >= 1) void initializeContinueWatching(video);
-    });
+    if (continueWatchingEnabled) {
+      document.querySelectorAll("video").forEach((video) => {
+        if (video.readyState >= 1) void initializeContinueWatching(video);
+      });
+    }
     chrome.runtime.sendMessage({ kind: "getEcoMode" }).then((response) => {
-      setEcoMode(Boolean(response?.enabled));
+      setEcoMode(Boolean(response?.enabled), response?.level);
     }).catch(() => {});
   });
 
@@ -2005,6 +2148,22 @@
     if (areaName === "local" && changes.monitoringEnabled) {
       configuredMonitoringEnabled = changes.monitoringEnabled.newValue !== false;
       updateEnabled(effectiveMonitoringEnabled(configuredMonitoringEnabled));
+    }
+    if (areaName === "local" && changes.featurePreferences) {
+      cryptoGuardEnabled = changes.featurePreferences.newValue?.cryptoGuardEnabled !== false;
+      continueWatchingEnabled = changes.featurePreferences.newValue?.continueWatchingEnabled !== false;
+      trackingCleanerEnabled = changes.featurePreferences.newValue?.trackingCleanerEnabled !== false;
+      window.dispatchEvent(new CustomEvent("browser-monitor-crypto-guard-state", { detail: { enabled: cryptoGuardEnabled } }));
+      if (!cryptoGuardEnabled) cryptoGuardCopy = null;
+      if (!continueWatchingEnabled) {
+        clearTimeout(continueWatchingIdentityTimer);
+        continueWatchingIdentityTimer = null;
+        document.querySelector('[data-browser-monitor-notice="continue-watching"]')?.remove();
+      } else {
+        document.querySelectorAll("video").forEach((video) => {
+          if (video.readyState >= 1) void initializeContinueWatching(video);
+        });
+      }
     }
     if (areaName === "local" && changes.browserProtectionSettings) {
       configuredProtectionSettings = { ...protectionSettings, ...(changes.browserProtectionSettings.newValue ?? {}) };
@@ -2046,10 +2205,12 @@
       return false;
     }
     if (message?.kind === "getPagePrivacySignals") {
-      sendResponse(pagePrivacySignals());
-      return false;
+      pagePrivacySignals().then(sendResponse).catch(() => sendResponse({}));
+      return true;
     }
     if (message?.kind !== "getMetrics") return false;
+    const recent = recentPerformanceEvents.filter((entry) => entry.at >= Date.now() - 60_000);
+    const sum = (key) => recent.reduce((total, entry) => total + (Number(entry[key]) || 0), 0);
     sendResponse({
       available: state.enabled,
       sampleDurationSeconds: Math.max(0, (performance.now() - state.sampleStartedAt) / 1000),
@@ -2060,16 +2221,40 @@
       transferBytes: state.transferBytes,
       layoutShiftScore: state.layoutShiftScore,
       backgroundEventCount: state.backgroundEventCount,
+      backgroundDurationSeconds: state.hiddenSince === null ? 0 : Math.max(0, (performance.now() - state.hiddenSince) / 1_000),
       mediaElementCount: document.querySelectorAll("audio, video").length,
       visibility: document.visibilityState === "hidden" ? "hidden" : "visible"
+      ,recent: {
+        sampleDurationSeconds: Math.min(60, Math.max(1, (performance.now() - state.sampleStartedAt) / 1000)),
+        longFrameCount: recent.filter((entry) => entry.type === "long-frame").length,
+        blockingDurationMS: sum("durationMS"),
+        resourceCount: recent.filter((entry) => entry.type === "request").length,
+        transferBytes: sum("bytes"),
+        layoutShiftScore: sum("value"),
+        backgroundEventCount: recent.filter((entry) => entry.background).length,
+        timeline: recent.slice(-60)
+      }
     });
     return false;
   });
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.kind !== "setEcoMode") return false;
-    setEcoMode(Boolean(message.enabled));
+    setEcoMode(Boolean(message.enabled), message.level);
     sendResponse({ ok: true });
+    return false;
+  });
+
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.kind !== "getPageRiskState") return false;
+    const form = document.querySelector("form");
+    const unsavedForm = [...document.querySelectorAll("input, textarea, select")].some((control) => {
+      if (control.disabled || ["button", "submit", "reset", "hidden"].includes(control.type)) return false;
+      if (control instanceof HTMLInputElement && ["checkbox", "radio"].includes(control.type)) return control.checked !== control.defaultChecked;
+      return String(control.value ?? "") !== String(control.defaultValue ?? "");
+    });
+    const activeMedia = [...document.querySelectorAll("audio, video")].some((media) => !media.paused && !media.ended);
+    sendResponse({ unsavedForm: Boolean(form && unsavedForm), activeMedia });
     return false;
   });
 

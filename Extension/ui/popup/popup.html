@@ -76,14 +76,14 @@
           <span id="privacy-receipt-state" class="receipt-state"></span>
         </div>
         <div class="receipt-metrics">
-          <div><strong id="receipt-blocked">0</strong><span data-i18n="receiptBlocked">prevented</span></div>
-          <div><strong id="receipt-third-party">0</strong><span data-i18n="receiptThirdParty">third parties</span></div>
-          <div><strong id="receipt-cookies">0</strong><span data-i18n="receiptCookies">visible cookies</span></div>
-          <div><strong id="receipt-storage">0</strong><span data-i18n="receiptStorage">storage keys</span></div>
+          <div><strong id="receipt-blocked">0</strong><span data-i18n="receiptBlocked">DNR + guards</span></div>
+          <div><strong id="receipt-third-party">0%</strong><span data-i18n="receiptThirdParty">network requests</span></div>
+          <div><strong id="receipt-cookies">0</strong><span data-i18n="receiptCookies">page-visible cookies</span></div>
+          <div><strong id="receipt-storage">0</strong><span data-i18n="receiptStorage">page storage keys</span></div>
         </div>
         <p id="receipt-domains" class="receipt-domains"></p>
         <button id="receipt-details-button" class="secondary-panel-button" type="button" data-i18n="receiptDetailsButton">See details</button>
-        <p class="receipt-privacy" data-i18n="receiptLocalOnly">This receipt is assembled locally and is not saved.</p>
+        <p class="receipt-privacy" data-i18n="receiptLocalOnly">Kept locally only for this visit.</p>
       </section>
       <details id="exceptions" class="exceptions" hidden>
         <summary><span data-i18n="exceptions">Exceptions</span> <span id="exception-count">0</span></summary>
@@ -125,17 +125,13 @@
           </span>
           <span>PiP</span>
         </button>
-        <button id="cookies-button" class="tool-button wide" data-tool-id="cookies" type="button" title="View and export cookies for the current site">
-          <span class="tool-symbol cookie-symbol" aria-hidden="true">◌</span>
+        <button id="cookies-button" class="tool-button wide" data-tool-id="cookies" type="button" data-i18n-title="cookieToolHint" title="View and export cookies for the current site after granting access">
+          <span class="tool-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 13a8 8 0 1 1-9-9 4 4 0 0 0 5 5 4 4 0 0 0 4 4Z"/><circle cx="8.5" cy="13.5" r=".8"/><circle cx="12" cy="17" r=".8"/></svg></span>
           <span data-i18n="cookies">Cookies</span>
         </button>
         <button id="block-element-button" class="tool-button wide" data-tool-id="block" type="button" title="Pick an element to hide on this page">
-          <span class="tool-symbol" aria-hidden="true">⌖</span>
+          <span class="tool-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></span>
           <span data-i18n="blockElement">Block</span>
-        </button>
-        <button id="statistics-button" class="tool-button wide" data-tool-id="statistics" type="button" data-i18n-title="statisticsHint">
-          <span class="tool-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 18V11M12 18V6M19 18V9"/></svg></span>
-          <span data-i18n="statisticsButton">Stats</span>
         </button>
         <button id="watch-history-button" class="tool-button wide" data-tool-id="video" type="button" data-i18n-title="watchHistoryHint" aria-pressed="false">
           <span class="tool-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 6.5h14v11H5z"/><path d="m10 9 5 3-5 3V9Z"/><path d="M7 3.5h10"/></svg></span>
@@ -144,6 +140,14 @@
         <button id="duplicate-tabs-button" class="tool-button wide" data-tool-id="duplicates" type="button" data-i18n-title="duplicateTabsHint">
           <span class="tool-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="7" width="12" height="12" rx="2"/><path d="M16 7V5H5v11h2"/></svg></span>
           <span data-i18n="duplicateTabsButton">Duplicates</span>
+        </button>
+        <button id="site-reset-button" class="tool-button wide" data-tool-id="site-reset" type="button" data-i18n-title="siteResetHint">
+          <span class="tool-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 8h14M9 8V5h6v3M8 8l1 11h6l1-11"/><path d="M4 4v4h4M5 8a8 8 0 0 1 13.5-2"/></svg></span>
+          <span data-i18n="siteResetButton">Reset</span>
+        </button>
+        <button id="review-button" class="tool-button wide" data-tool-id="review" type="button" data-i18n-title="reviewHint">
+          <span class="tool-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h10v12H4zM8 3v3M7 11h4M7 15h3M17 5h3v14l-1.5-1-1.5 1z"/></svg></span>
+          <span data-i18n="reviewButton">Review</span>
         </button>
           <span id="pip-status" class="sr-only" aria-live="polite">Looking for video in the current tab…</span>
         </div>
@@ -180,7 +184,10 @@
             <p id="tab-detail-state"></p>
           </div>
         </div>
+        <div class="review-switch metric-mode" role="tablist" aria-label="Metric time range"><button id="metric-recent-tab" role="tab" aria-selected="true" type="button" data-i18n="metricRecent">Last 60 seconds</button><button id="metric-total-tab" role="tab" aria-selected="false" type="button" data-i18n="metricTotal">Since opening</button></div>
+        <div id="indicator-grid" class="indicator-grid" aria-label="Load indicators"></div>
         <div id="metric-grid" class="metric-grid"></div>
+        <details class="background-timeline"><summary data-i18n="backgroundTimeline">Background activity timeline</summary><ol id="background-timeline-list"></ol></details>
         <div class="detail-note">
           <span class="detail-label" data-i18n="whyItMatters">Why it matters</span>
           <ul id="tab-detail-reasons"></ul>
@@ -189,7 +196,8 @@
           <span class="detail-label" data-i18n="recommendation">Recommendation</span>
           <p id="tab-detail-recommendation"></p>
         </div>
-        <button id="detail-eco-button" class="primary-panel-button" type="button"></button>
+        <fieldset class="eco-controls"><legend data-i18n="ecoLevel">Eco Mode level</legend><div class="review-switch"><label><input type="radio" name="eco-level" value="pause"><span data-i18n="ecoPauseMedia">Pause media</span></label><label><input type="radio" name="eco-level" value="limit" checked><span data-i18n="ecoLimitBackground">Limit background</span></label><label><input type="radio" name="eco-level" value="deep"><span data-i18n="ecoDeepSleep">Deep sleep</span></label></div><label class="reset-schedule"><span data-i18n="ecoDuration">Duration</span><select id="eco-duration"><option value="0" data-i18n="ecoUntilDisabled">Until disabled</option><option value="15" data-i18n="eco15Minutes">15 minutes</option></select></label><p id="eco-preview" class="review-note"></p></fieldset>
+        <button id="detail-eco-button" class="primary-panel-button" type="button"></button><p id="eco-restore-status" class="privacy-note" role="status"></p>
       </div>
     </section>
 
@@ -200,7 +208,12 @@
           <h2 id="cookies-title" data-i18n="cookies">Cookies</h2>
           <p id="cookies-host" data-i18n="currentSite">Current site</p>
         </div>
-        <span id="cookies-count" class="panel-count">0</span>
+        <div class="cookie-header-actions">
+          <button id="open-cookie-history" class="panel-icon-action" type="button" data-i18n-aria="cookieHistoryOpen" aria-label="Open cookie history and browser-wide export">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.6"/><path d="M4 4v4.6h4.6M12 7.5V12l3 2"/></svg>
+          </button>
+          <span id="cookies-count" class="panel-count">0</span>
+        </div>
       </header>
       <div class="cookies-body">
         <div class="export-actions">
@@ -208,7 +221,6 @@
           <button id="save-as-cookies" type="button" data-i18n="saveAs">Save As</button>
           <button id="copy-cookies" type="button" data-i18n="copy">Copy</button>
         </div>
-        <button id="export-all-cookies" class="secondary-panel-button" type="button" data-i18n="exportAllCookies">Export all browser cookies</button>
         <div class="format-row">
           <label for="cookie-format" data-i18n="exportFormat">Export format</label>
           <select id="cookie-format">
@@ -217,8 +229,8 @@
           </select>
         </div>
         <div class="cookie-table-wrap">
-          <table>
-            <thead><tr><th>Domain</th><th>Name</th><th>Value</th><th>Flags</th></tr></thead>
+          <table aria-labelledby="cookies-title" aria-describedby="cookie-status">
+            <thead><tr><th data-i18n="cookieDomain">Domain</th><th data-i18n="cookieIdentity">Cookie</th><th data-i18n="cookieProtection">Protection</th></tr></thead>
             <tbody id="cookie-table"></tbody>
           </table>
           <div id="cookies-empty" class="cookie-empty" hidden data-i18n="noCookies">No cookies found for this site.</div>
@@ -244,6 +256,46 @@
       <div class="duplicates-body">
         <div id="duplicates-list" class="duplicates-list"></div>
         <button id="close-all-duplicates" class="primary-panel-button" type="button" data-i18n="closeDuplicateTabs">Close duplicates</button>
+      </div>
+    </section>
+
+    <section id="site-reset-panel" class="overlay-panel" aria-labelledby="site-reset-title" hidden>
+      <header class="panel-header">
+        <button id="close-site-reset" class="back-button" type="button" data-i18n-aria="back" aria-label="Back">‹</button>
+        <div><h2 id="site-reset-title" data-i18n="siteResetTitle">Site Reset</h2><p id="site-reset-host">—</p></div>
+        <span id="site-reset-pending" class="panel-count">0</span>
+      </header>
+      <div class="site-reset-body">
+        <p class="panel-warning" data-i18n="siteResetWarning">You may be signed out and unsaved offline data may be lost.</p>
+        <fieldset class="reset-categories"><legend data-i18n="siteResetCategories">Data to remove</legend>
+          <label><input type="checkbox" value="cookies" checked><span><strong data-i18n="siteResetCookies">Cookies</strong><small data-i18n="siteResetCookiesDetail">Sign-in and preference cookies</small></span></label>
+          <label><input type="checkbox" value="storage" checked><span><strong data-i18n="siteResetStorage">Site storage</strong><small>Local Storage · IndexedDB</small></span></label>
+          <label><input type="checkbox" value="cache" checked><span><strong data-i18n="siteResetCache">Cache</strong><small>HTTP · Cache Storage</small></span></label>
+          <label><input type="checkbox" value="serviceWorkers"><span><strong>Service workers</strong><small data-i18n="siteResetWorkersDetail">Background site workers</small></span></label>
+        </fieldset>
+        <label class="reset-schedule"><span data-i18n="siteResetWhen">When to remove</span><select id="site-reset-schedule"><option value="now" data-i18n="siteResetNow">Now</option><option value="close" data-i18n="siteResetOnClose">After this tab closes</option><option value="5" data-i18n="siteResetAfter5">5 min after tab closes</option><option value="30" data-i18n="siteResetAfter30">30 min after tab closes</option><option value="60" data-i18n="siteResetAfter60">1 hour after tab closes</option></select></label>
+        <p class="schedule-note" data-i18n="siteResetCloseNote">Reloading does not start the timer. The countdown begins only when this tab is closed.</p>
+        <button id="apply-site-reset" class="primary-panel-button" type="button" data-i18n="siteResetApply">Schedule reset</button>
+        <p id="site-reset-status" class="privacy-note" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section id="review-panel" class="overlay-panel" aria-labelledby="review-title" hidden>
+      <header class="panel-header">
+        <button id="close-review" class="back-button" type="button" data-i18n-aria="back" aria-label="Back">‹</button>
+        <div><h2 id="review-title" data-i18n="reviewTitle">Browser review</h2><p data-i18n="reviewDescription">Old tabs and bookmark structure</p></div>
+        <span id="review-count" class="panel-count">0</span>
+      </header>
+      <div class="review-body">
+        <div class="review-switch" role="tablist" aria-label="Review type"><button id="review-tabs-tab" role="tab" aria-selected="true" type="button" data-i18n="reviewTabs">Tabs</button><button id="review-bookmarks-tab" role="tab" aria-selected="false" type="button" data-i18n="reviewBookmarks">Bookmarks</button></div>
+        <section id="stale-review-view" class="review-view">
+          <div class="review-controls"><label for="stale-age" data-i18n="staleInactiveFor">Inactive for</label><select id="stale-age"><option value="1" data-i18n="stale1Day">1 day</option><option value="7" selected data-i18n="stale7Days">7 days</option><option value="30" data-i18n="stale30Days">30 days</option></select><button id="refresh-stale" type="button" data-i18n="refresh">Refresh</button></div>
+          <p class="review-note" data-i18n="staleNote">Pinned, active and audible tabs are excluded. Unsaved forms and active media are checked before action.</p><div id="stale-list" class="review-list"></div><div class="review-actions"><button id="select-stale" type="button" data-i18n="selectAll">Select all</button><button id="save-stale" type="button" disabled data-i18n="saveSelected">Save selected</button><button id="close-stale" class="primary-panel-button" type="button" disabled data-i18n="closeSelected">Close selected</button></div>
+        </section>
+        <section id="bookmark-review-view" class="review-view" hidden>
+          <p class="review-note" data-i18n="bookmarkReviewNote">Finds malformed, duplicate, unavailable and redirected destinations. Sites are contacted only after this explicit scan.</p><button id="scan-bookmarks" class="secondary-panel-button" type="button" data-i18n="scanBookmarks">Allow access and scan</button><div id="bookmark-list" class="review-list"></div>
+        </section>
+        <p id="review-status" class="privacy-note" role="status" aria-live="polite"></p>
       </div>
     </section>
 

@@ -46,11 +46,18 @@ test("continue watching identity removes common mirror noise", () => {
 test("programmatic wallet copies are cleaned in the page world", async () => {
   const writes = [];
   const events = [];
+  const listeners = new Map();
   const mainSource = readFileSync(new URL("../features/security/crypto-guard-main.js", import.meta.url), "utf8");
   const clipboard = { writeText: async (value) => writes.push(value) };
   const mainContext = vm.createContext({
     navigator: { clipboard },
-    window: { dispatchEvent: (event) => events.push(event) },
+    window: {
+      addEventListener: (type, listener) => listeners.set(type, listener),
+      dispatchEvent: (event) => {
+        events.push(event);
+        listeners.get(event.type)?.(event);
+      }
+    },
     CustomEvent: class CustomEvent {
       constructor(type, options) {
         this.type = type;
@@ -60,8 +67,11 @@ test("programmatic wallet copies are cleaned in the page world", async () => {
   });
   vm.runInContext(mainSource, mainContext);
   const address = "0x52908400098527886E0F7030069857D2E4169EE7";
-  await clipboard.writeText(`\u202E${address}\u200B`);
-  assert.deepEqual(writes, [address]);
-  assert.equal(events[0].type, "browser-monitor-crypto-copy");
-  assert.equal(events[0].detail.changed, true);
+  const formattedAddress = `\u202E${address}\u200B`;
+  await clipboard.writeText(formattedAddress);
+  mainContext.window.dispatchEvent(new mainContext.CustomEvent("browser-monitor-crypto-guard-state", { detail: { enabled: true } }));
+  await clipboard.writeText(formattedAddress);
+  assert.deepEqual(writes, [formattedAddress, address]);
+  const copyEvent = events.find((event) => event.type === "browser-monitor-crypto-copy");
+  assert.equal(copyEvent.detail.changed, true);
 });

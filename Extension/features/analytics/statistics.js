@@ -2,6 +2,8 @@ const HISTORY_DAYS = 7;
 const SITE_LIMIT_PER_DAY = 120;
 const RESOURCE_LIMIT_PER_DAY = 240;
 const EVENT_TYPES = new Set(["network", "sponsor", "video", "link"]);
+const EVENT_SOURCES = new Set(["easylist", "easyprivacy", "ruadlist", "custom", "cryptomining", "page-guard", "video", "unknown"]);
+const EVENT_CATEGORIES = new Set(["ads", "trackers", "miners", "telemetry", "annoyances", "video", "unknown"]);
 
 function dateFrom(value) {
   const date = value instanceof Date ? value : new Date(value ?? Date.now());
@@ -43,7 +45,10 @@ function normalizedDay(input = {}) {
   const total = Math.max(safeCount(input.total), Object.values(types).reduce((sum, count) => sum + count, 0));
   return {
     total,
+    observedRequests: safeCount(input.observedRequests),
     types,
+    sources: normalizedCounts(input.sources, 20),
+    categories: normalizedCounts(input.categories, 20),
     sites: normalizedCounts(input.sites, SITE_LIMIT_PER_DAY),
     resources: normalizedCounts(input.resources, RESOURCE_LIMIT_PER_DAY),
     updatedAt: Number.isFinite(Date.parse(input.updatedAt ?? "")) ? input.updatedAt : null
@@ -88,12 +93,20 @@ export function recordBlockingEvent(input, event, now = new Date()) {
   const statistics = normalizeBlockingStatistics(input, normalizationDate);
   const key = localDayKey(date);
   const day = normalizedDay(statistics.days[key]);
+  if (event?.type === "observed") {
+    day.observedRequests += Math.max(1, Math.min(safeCount(event?.count) || 1, 100));
+    day.updatedAt = date.toISOString();
+    statistics.days[key] = day;
+    return statistics;
+  }
   const type = EVENT_TYPES.has(event?.type) ? event.type : "network";
   const amount = Math.max(1, Math.min(safeCount(event?.count) || 1, 100));
   day.total += amount;
   day.types[type] += amount;
   incrementBounded(day.sites, event?.site, amount, SITE_LIMIT_PER_DAY);
   incrementBounded(day.resources, event?.resource, amount, RESOURCE_LIMIT_PER_DAY);
+  incrementBounded(day.sources, EVENT_SOURCES.has(event?.source) ? event.source : "unknown", amount, 20);
+  incrementBounded(day.categories, EVENT_CATEGORIES.has(event?.category) ? event.category : "unknown", amount, 20);
   day.updatedAt = date.toISOString();
   statistics.days[key] = day;
   return statistics;
@@ -123,10 +136,13 @@ export function summarizeBlockingStatistics(input, now = new Date()) {
   const today = days.at(-1);
   return {
     today,
+    blockedShare: today.observedRequests ? Math.round(today.total / today.observedRequests * 100) : 0,
     sevenDayTotal: days.reduce((sum, day) => sum + day.total, 0),
     days: days.map(({ key, total, types }) => ({ key, total, types })),
     topSites: aggregateMaps(days, "sites").slice(0, 12),
     resources: aggregateMaps(days, "resources").slice(0, 40),
+    sources: aggregateMaps(days, "sources").slice(0, 20),
+    categories: aggregateMaps(days, "categories").slice(0, 20),
     updatedAt: today.updatedAt
   };
 }

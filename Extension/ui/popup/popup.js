@@ -1,5 +1,6 @@
 import { browserLanguage, localizeDocument, translate } from "../../core/localization.js";
-import { duplicateTabGroups } from "../../features/tools/site-tools.js";
+import { withTimeout } from "../../core/async-utils.js";
+import { bookmarkStructureIssues, duplicateGroups as duplicateTabGroups } from "../../features/tools/browser-health.js";
 
 const extensionToggle = document.querySelector("#extension-toggle");
 const summary = document.querySelector("#summary");
@@ -35,11 +36,12 @@ const pipButton = document.querySelector("#pip-button");
 const pipStatus = document.querySelector("#pip-status");
 const cookiesButton = document.querySelector("#cookies-button");
 const blockElementButton = document.querySelector("#block-element-button");
-const statisticsButton = document.querySelector("#statistics-button");
 const headerStatisticsButton = document.querySelector("#header-statistics-button");
 const feedbackButton = document.querySelector("#feedback-button");
 const watchHistoryButton = document.querySelector("#watch-history-button");
 const duplicateTabsButton = document.querySelector("#duplicate-tabs-button");
+const siteResetButton = document.querySelector("#site-reset-button");
+const reviewButton = document.querySelector("#review-button");
 const toolStrip = document.querySelector("#tool-strip");
 const previousTools = document.querySelector("#previous-tools");
 const nextTools = document.querySelector("#next-tools");
@@ -54,6 +56,7 @@ const tabDetailPanel = document.querySelector("#tab-detail-panel");
 const closeTabDetail = document.querySelector("#close-tab-detail");
 const tabDetailHost = document.querySelector("#tab-detail-host");
 const tabDetailScore = document.querySelector("#tab-detail-score");
+const indicatorGrid = document.querySelector("#indicator-grid");
 const tabDetailDot = document.querySelector("#tab-detail-dot");
 const tabDetailName = document.querySelector("#tab-detail-name");
 const tabDetailState = document.querySelector("#tab-detail-state");
@@ -61,6 +64,12 @@ const metricGrid = document.querySelector("#metric-grid");
 const tabDetailReasons = document.querySelector("#tab-detail-reasons");
 const tabDetailRecommendation = document.querySelector("#tab-detail-recommendation");
 const detailEcoButton = document.querySelector("#detail-eco-button");
+const metricRecentTab = document.querySelector("#metric-recent-tab");
+const metricTotalTab = document.querySelector("#metric-total-tab");
+const backgroundTimelineList = document.querySelector("#background-timeline-list");
+const ecoDuration = document.querySelector("#eco-duration");
+const ecoPreview = document.querySelector("#eco-preview");
+const ecoRestoreStatus = document.querySelector("#eco-restore-status");
 const cookiesPanel = document.querySelector("#cookies-panel");
 const closeCookies = document.querySelector("#close-cookies");
 const cookiesHost = document.querySelector("#cookies-host");
@@ -71,7 +80,7 @@ const cookieFormat = document.querySelector("#cookie-format");
 const exportCookies = document.querySelector("#export-cookies");
 const saveAsCookies = document.querySelector("#save-as-cookies");
 const copyCookies = document.querySelector("#copy-cookies");
-const exportAllCookies = document.querySelector("#export-all-cookies");
+const openCookieHistory = document.querySelector("#open-cookie-history");
 const previousCookies = document.querySelector("#previous-cookies");
 const nextCookies = document.querySelector("#next-cookies");
 const cookiePageLabel = document.querySelector("#cookie-page-label");
@@ -83,6 +92,29 @@ const closeDuplicates = document.querySelector("#close-duplicates");
 const duplicatesList = document.querySelector("#duplicates-list");
 const duplicatesCount = document.querySelector("#duplicates-count");
 const closeAllDuplicates = document.querySelector("#close-all-duplicates");
+const siteResetPanel = document.querySelector("#site-reset-panel");
+const closeSiteReset = document.querySelector("#close-site-reset");
+const siteResetHost = document.querySelector("#site-reset-host");
+const siteResetPending = document.querySelector("#site-reset-pending");
+const siteResetSchedule = document.querySelector("#site-reset-schedule");
+const applySiteReset = document.querySelector("#apply-site-reset");
+const siteResetStatus = document.querySelector("#site-reset-status");
+const reviewPanel = document.querySelector("#review-panel");
+const closeReview = document.querySelector("#close-review");
+const reviewCount = document.querySelector("#review-count");
+const reviewTabsTab = document.querySelector("#review-tabs-tab");
+const reviewBookmarksTab = document.querySelector("#review-bookmarks-tab");
+const staleReviewView = document.querySelector("#stale-review-view");
+const bookmarkReviewView = document.querySelector("#bookmark-review-view");
+const staleAge = document.querySelector("#stale-age");
+const refreshStale = document.querySelector("#refresh-stale");
+const staleList = document.querySelector("#stale-list");
+const selectStale = document.querySelector("#select-stale");
+const closeStale = document.querySelector("#close-stale");
+const saveStale = document.querySelector("#save-stale");
+const scanBookmarks = document.querySelector("#scan-bookmarks");
+const bookmarkList = document.querySelector("#bookmark-list");
+const reviewStatus = document.querySelector("#review-status");
 
 let activeTab = null;
 let latestSnapshot = null;
@@ -96,16 +128,53 @@ let detailedTabId = null;
 let language = "en";
 let siteActionStatusTimer = null;
 let currentDuplicateGroups = [];
+let currentStaleTabs = [];
+let staleRiskById = new Map();
+let metricMode = "recent";
 let toolDrag = null;
 let suppressToolClick = false;
 let toolSnapTimer = null;
 let toolPageAnimationUntil = 0;
 let toolScrollAnimationFrame = 0;
 const t = (key, values) => translate(language, key, values);
+const POPUP_REQUEST_TIMEOUT_MS = 2_500;
+const popupRequest = (message, label = message?.kind ?? "Popup request") => withTimeout(
+  chrome.runtime.sendMessage(message),
+  POPUP_REQUEST_TIMEOUT_MS,
+  label
+);
+
+function emptySnapshot() {
+  return {
+    extensionEnabled: extensionToggle.checked,
+    monitoringEnabled: true,
+    tabs: []
+  };
+}
+
+function renderLoadFailure() {
+  renderSnapshot(emptySnapshot());
+  summary.textContent = t("dataUnavailable");
+  hostStatus.textContent = t("refreshToRetry");
+  siteControlDetail.textContent = t("internalUnavailable");
+  siteControlAction.textContent = "";
+  ruleCount.textContent = "—";
+  const empty = list.querySelector(".empty");
+  if (empty) empty.textContent = t("refreshToRetry");
+}
+
+async function ensureOptionalPermission(permission, promptKey) {
+  const permissions = [permission];
+  if (await chrome.permissions.contains({ permissions }).catch(() => false)) return true;
+  if (!confirm(t(promptKey))) return false;
+  return chrome.permissions.request({ permissions }).catch(() => false);
+}
 const performanceTextKeys = new Map([
   ["Long main-thread blocks", "reasonLongBlocks"],
   ["Frequent style and layout recalculation", "reasonLayout"],
-  ["High network resource volume", "reasonNetwork"],
+    ["Visible layout instability", "reasonLayoutShift"],
+    ["High network resource volume", "reasonNetwork"],
+    ["High resource count", "reasonResourceCount"],
   ["Activity continues in the background", "reasonBackground"],
   ["Active media elements on the page", "reasonMedia"],
   ["No significant load sources detected", "noSignificantLoad"],
@@ -115,7 +184,6 @@ const performanceTextKeys = new Map([
   ["Close this tab if you do not need it right now.", "recommendationCritical"]
 ]);
 const localizePerformanceText = (value) => performanceTextKeys.has(value) ? t(performanceTextKeys.get(value)) : value;
-const extensionWindowOpens = new Map();
 
 function formatNumber(value) {
   return new Intl.NumberFormat(language).format(value ?? 0);
@@ -135,6 +203,12 @@ function formatMediaTime(seconds) {
   return hours > 0
     ? `${hours}:${String(minutes).padStart(2, "0")}:${remainder}`
     : `${minutes}:${remainder}`;
+}
+
+function formatObservationTime(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  if (total < 60) return t("durationSeconds", { count: total });
+  return t("durationMinutes", { count: Math.max(1, Math.round(total / 60)) });
 }
 
 function hostname(url) {
@@ -160,55 +234,16 @@ async function openExtensionTab(url) {
   return tab;
 }
 
-async function openDedicatedExtensionWindow(url, options) {
-  const target = new URL(url);
-  const tabs = await chrome.tabs.query({});
-  const matches = tabs.filter((tab) => {
-    try {
-      const current = new URL(tab.url);
-      return current.origin === target.origin && current.pathname === target.pathname;
-    } catch {
-      return false;
-    }
-  });
-  const existing = matches[0];
-  const duplicateIDs = matches.slice(1).map((tab) => tab.id).filter(Number.isInteger);
-  if (duplicateIDs.length) await chrome.tabs.remove(duplicateIDs).catch(() => null);
-  if (!existing?.id) {
-    return chrome.windows.create({ url, type: "popup", focused: true, ...options });
-  }
-  await chrome.tabs.update(existing.id, { url, active: true });
-  const owner = await chrome.windows.get(existing.windowId).catch(() => null);
-  if (owner?.type !== "popup") {
-    return chrome.windows.create({ tabId: existing.id, type: "popup", focused: true, ...options });
-  }
-  if (owner.state === "minimized") {
-    await chrome.windows.update(existing.windowId, { state: "normal" }).catch(() => null);
-  }
-  return chrome.windows.update(existing.windowId, { focused: true });
-}
-
-async function openExtensionWindow(url, options) {
-  const target = new URL(url);
-  if (target.pathname.endsWith("/popup.html")) return openExtensionTab(url);
-  const key = `${target.origin}${target.pathname}`;
-  const existingOpen = extensionWindowOpens.get(key);
-  if (existingOpen) return existingOpen;
-  const open = openDedicatedExtensionWindow(url, options).finally(() => {
-    extensionWindowOpens.delete(key);
-  });
-  extensionWindowOpens.set(key, open);
-  return open;
-}
-
 function closePanels() {
   tabDetailPanel.hidden = true;
   cookiesPanel.hidden = true;
   duplicatesPanel.hidden = true;
+  siteResetPanel.hidden = true;
+  reviewPanel.hidden = true;
 }
 
 async function refreshSiteDataCleanup() {
-  const state = await chrome.runtime.sendMessage({
+  const state = await popupRequest({
     kind: "getSiteDataCleanupState",
     tabId: activeTab?.id,
     url: activeTab?.url
@@ -238,7 +273,21 @@ function renderDuplicateGroups(groups) {
     title.title = group.url;
     const detail = document.createElement("span");
     detail.textContent = t("duplicateCopies", { count: group.tabs.length });
-    item.append(title, detail);
+    const choices = document.createElement("div");
+    choices.className = "duplicate-choices";
+    group.tabs.forEach((tab, index) => {
+      const choice = document.createElement("label");
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = `duplicate-keeper-${groups.indexOf(group)}`;
+      radio.value = String(tab.id);
+      radio.checked = tab.active || (!group.tabs.some((entry) => entry.active) && index === 0);
+      const copy = document.createElement("span");
+      copy.textContent = `${tab.active ? t("duplicateActive") : t("duplicateKeep")} · ${new Date(tab.lastAccessed || Date.now()).toLocaleString(language === "ru" ? "ru-RU" : "en-US")}`;
+      choice.append(radio, copy);
+      choices.append(choice);
+    });
+    item.append(title, detail, choices);
     duplicatesList.append(item);
   }
 }
@@ -253,12 +302,201 @@ async function openDuplicateTabs() {
 async function closeDuplicateTabs() {
   const ids = [];
   for (const group of currentDuplicateGroups) {
-    const keeper = group.tabs.find((tab) => tab.active) ?? group.tabs[0];
+    const groupIndex = currentDuplicateGroups.indexOf(group);
+    const keeperId = Number(duplicatesList.querySelector(`input[name="duplicate-keeper-${groupIndex}"]:checked`)?.value);
+    const keeper = group.tabs.find((tab) => tab.id === keeperId) ?? group.tabs[0];
     ids.push(...group.tabs.filter((tab) => tab.id !== keeper.id).map((tab) => tab.id));
   }
   if (ids.length) await chrome.tabs.remove(ids);
   await openDuplicateTabs();
   await refresh();
+}
+
+function selectedResetCategories() {
+  return [...siteResetPanel.querySelectorAll('.reset-categories input[type="checkbox"]:checked')]
+    .map((input) => input.value);
+}
+
+async function openSiteReset() {
+  if (!activeTab?.url || !/^https?:/i.test(activeTab.url)) return;
+  closePanels();
+  siteResetPanel.hidden = false;
+  siteResetHost.textContent = hostname(activeTab.url);
+  siteResetStatus.textContent = "";
+  const pending = await chrome.runtime.sendMessage({ kind: "getPendingSiteResets", tabId: activeTab.id }).catch(() => ({ resets: [] }));
+  siteResetPending.textContent = formatNumber(pending.resets?.length ?? 0);
+}
+
+async function applySiteResetSelection() {
+  if (!activeTab?.id || !activeTab.url) return;
+  const categories = selectedResetCategories();
+  if (!categories.length) {
+    siteResetStatus.textContent = t("siteResetChooseCategory");
+    return;
+  }
+  const permission = await ensureOptionalPermission("browsingData", "browsingDataPermissionPrompt");
+  if (!permission) {
+    siteResetStatus.textContent = t("permissionRequired");
+    return;
+  }
+  const origin = new URL(activeTab.url).origin;
+  const schedule = siteResetSchedule.value;
+  if (!confirm(t(schedule === "now" ? "siteResetConfirmNow" : "siteResetConfirmSchedule", { site: hostname(activeTab.url) }))) return;
+  applySiteReset.disabled = true;
+  const response = schedule === "now"
+    ? await chrome.runtime.sendMessage({ kind: "resetSiteData", origin, categories }).catch(() => ({ ok: false }))
+    : await chrome.runtime.sendMessage({
+      kind: "scheduleSiteReset",
+      tabId: activeTab.id,
+      origin,
+      categories,
+      delayMinutes: schedule === "close" ? 0 : Number(schedule)
+    }).catch(() => ({ ok: false }));
+  applySiteReset.disabled = false;
+  if (schedule === "now" && Array.isArray(response.results)) {
+    siteResetStatus.textContent = response.results.map((result) => `${t(`siteResetResult_${result.category}`)}: ${t(result.ok ? "siteResetResultDone" : "siteResetResultFailed")}`).join(" · ");
+  } else {
+    siteResetStatus.textContent = response.ok ? t("siteResetScheduled") : t("siteResetFailed");
+  }
+  if (response.ok && schedule !== "now") siteResetPending.textContent = formatNumber(response.pendingCount ?? 1);
+}
+
+function reviewEmpty(target, key) {
+  const empty = document.createElement("div");
+  empty.className = "review-empty";
+  empty.textContent = t(key);
+  target.replaceChildren(empty);
+}
+
+function selectedStaleTabIds() {
+  const ids = [...staleList.querySelectorAll("input[data-tab-id]:checked")].map((input) => Number(input.dataset.tabId));
+  closeStale.disabled = ids.length === 0;
+  saveStale.disabled = ids.length === 0;
+  return ids;
+}
+
+async function loadStaleTabs() {
+  const cutoff = Date.now() - Number(staleAge.value) * 86_400_000;
+  currentStaleTabs = (await chrome.tabs.query({ currentWindow: true }))
+    .filter((tab) => tab.id && !tab.active && !tab.pinned && !tab.audible && /^https?:/i.test(tab.url ?? "") && Number(tab.lastAccessed) > 0 && tab.lastAccessed < cutoff)
+    .sort((left, right) => left.lastAccessed - right.lastAccessed);
+  const riskEntries = await Promise.all(currentStaleTabs.map(async (tab) => [tab.id, await chrome.tabs.sendMessage(tab.id, { kind: "getPageRiskState" }).catch(() => ({ unsavedForm: false, activeMedia: false }))]));
+  staleRiskById = new Map(riskEntries);
+  reviewCount.textContent = formatNumber(currentStaleTabs.length);
+  reviewStatus.textContent = currentStaleTabs.length ? "" : t("staleEmpty");
+  if (!currentStaleTabs.length) {
+    reviewEmpty(staleList, "staleEmpty");
+    selectedStaleTabIds();
+    return;
+  }
+  staleList.replaceChildren(...currentStaleTabs.map((tab) => {
+    const row = document.createElement("label");
+    row.className = "review-row";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.dataset.tabId = String(tab.id);
+    input.addEventListener("change", selectedStaleTabIds);
+    const text = document.createElement("span");
+    const title = document.createElement("strong");
+    title.textContent = tab.title || hostname(tab.url);
+    const url = document.createElement("small");
+    url.textContent = tab.url;
+    text.append(title, url);
+    const badge = document.createElement("span");
+    badge.className = "review-badge";
+    badge.textContent = t("staleDays", { count: Math.max(1, Math.floor((Date.now() - tab.lastAccessed) / 86_400_000)) });
+    const risk = staleRiskById.get(tab.id);
+    if (risk?.unsavedForm || risk?.activeMedia) {
+      badge.textContent += ` · ${t(risk.unsavedForm ? "staleUnsaved" : "staleMedia")}`;
+      row.classList.add("warning");
+    }
+    row.append(input, text, badge);
+    return row;
+  }));
+  selectedStaleTabIds();
+}
+
+function flattenBookmarks(nodes, result = []) {
+  for (const node of nodes ?? []) {
+    if (node.url) result.push(node);
+    if (node.children) flattenBookmarks(node.children, result);
+  }
+  return result;
+}
+
+function canonicalBookmarkURL(raw) {
+  try {
+    const url = new URL(raw);
+    if (!/^https?:$/.test(url.protocol)) return "";
+    url.hash = "";
+    for (const key of [...url.searchParams.keys()]) if (/^utm_|^(fbclid|gclid)$/i.test(key)) url.searchParams.delete(key);
+    url.hostname = url.hostname.toLowerCase();
+    if (url.pathname !== "/") url.pathname = url.pathname.replace(/\/+$/, "");
+    url.searchParams.sort();
+    return url.href;
+  } catch {
+    return "";
+  }
+}
+
+async function runBookmarkReview() {
+  const permission = await ensureOptionalPermission("bookmarks", "bookmarksPermissionPrompt");
+  if (!permission) {
+    reviewStatus.textContent = t("permissionRequired");
+    return;
+  }
+  const bookmarks = flattenBookmarks(await chrome.bookmarks.getTree());
+  reviewStatus.textContent = t("bookmarkChecking");
+  const issues = bookmarkStructureIssues(bookmarks);
+  const valid = bookmarks.filter((bookmark) => canonicalBookmarkURL(bookmark.url)).slice(0, 200);
+  const network = await chrome.runtime.sendMessage({ kind: "inspectBookmarkURLs", urls: valid.map((bookmark) => bookmark.url) }).catch(() => ({ results: [] }));
+  const byURL = new Map((network.results ?? []).map((result) => [canonicalBookmarkURL(result.url), result]));
+  for (const bookmark of valid) {
+    const result = byURL.get(canonicalBookmarkURL(bookmark.url));
+    if (result && ["redirect", "unavailable"].includes(result.status)) issues.push({ bookmark, type: result.status, result });
+  }
+  reviewCount.textContent = formatNumber(issues.length);
+  reviewStatus.textContent = t(issues.length ? "bookmarkIssuesFound" : "bookmarkHealthy", { count: issues.length || bookmarks.length });
+  if (!issues.length) return reviewEmpty(bookmarkList, "bookmarkNoIssues");
+  bookmarkList.replaceChildren(...issues.map(({ bookmark, type, result }) => {
+    const row = document.createElement("div");
+    row.className = "review-row";
+    const marker = document.createElement("span");
+    marker.textContent = type === "duplicate" ? "=" : type === "redirect" ? "→" : "!";
+    const text = document.createElement("span");
+    const title = document.createElement("strong");
+    title.textContent = bookmark.title || bookmark.url;
+    const url = document.createElement("small");
+    url.textContent = bookmark.url;
+    text.append(title, url);
+    const badge = document.createElement("span");
+    badge.className = "review-badge";
+    const labelKey = type === "duplicate" ? "bookmarkDuplicate" : type === "redirect" ? "bookmarkRedirect" : type === "unavailable" ? "bookmarkUnavailable" : "bookmarkInvalid";
+    badge.textContent = t(labelKey);
+    if (result?.statusCode) badge.title = `HTTP ${result.statusCode}${result.finalURL ? ` · ${result.finalURL}` : ""}`;
+    row.append(marker, text, badge);
+    return row;
+  }));
+}
+
+function selectReviewView(name) {
+  const tabsSelected = name === "tabs";
+  reviewTabsTab.setAttribute("aria-selected", String(tabsSelected));
+  reviewBookmarksTab.setAttribute("aria-selected", String(!tabsSelected));
+  staleReviewView.hidden = !tabsSelected;
+  bookmarkReviewView.hidden = tabsSelected;
+  reviewStatus.textContent = "";
+  if (tabsSelected) void loadStaleTabs();
+  else {
+    reviewCount.textContent = "0";
+    if (!bookmarkList.children.length) reviewEmpty(bookmarkList, "bookmarkStartScan");
+  }
+}
+
+async function openReview() {
+  closePanels();
+  reviewPanel.hidden = false;
+  selectReviewView("tabs");
 }
 
 function orderedToolButtons() {
@@ -492,12 +730,23 @@ function renderWatchHistory(entries = []) {
         ? "watchHistoryMovie"
         : "watchHistoryVideo");
     meta.textContent = [typeLabel, entry.episode].filter(Boolean).join(" · ");
+    if (entry.removedParameters?.length) meta.textContent += ` · ${t("watchHistoryCleaned", { parameters: entry.removedParameters.join(", ") })}`;
     copy.append(site, title, meta);
 
     const time = document.createElement("span");
     time.className = "watch-time";
     time.textContent = formatMediaTime(entry.position);
-    item.append(kind, copy, time);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "watch-remove";
+    remove.setAttribute("aria-label", t("watchHistoryRemove"));
+    remove.textContent = "×";
+    remove.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await chrome.runtime.sendMessage({ kind: "removeContinueWatchingEntry", identity: entry.identity });
+      await openWatchHistoryView();
+    });
+    item.append(kind, copy, time, remove);
     item.addEventListener("click", async () => {
       await chrome.tabs.create({ url: entry.url, active: true });
       window.close();
@@ -532,30 +781,43 @@ function showSiteActionStatus(message) {
 function renderPrivacyReceipt(receipt) {
   privacyReceiptDomain.textContent = receipt?.domain || latestBlockerState?.domain || t("currentSite");
   const protectionActive = receipt?.protectionActive === true;
-  privacyReceiptState.textContent = protectionActive ? t("receiptProtected") : t("receiptPaused");
+  const state = protectionActive ? t("receiptProtected") : t("receiptPaused");
+  const observedSeconds = Math.max(0, (Date.now() - Number(receipt?.startedAt ?? Date.now())) / 1_000);
+  privacyReceiptState.textContent = `${state} · ${t("receiptObserved", { duration: formatObservationTime(observedSeconds) })}`;
   privacyReceiptState.classList.toggle("warning", !protectionActive);
   receiptBlocked.textContent = formatNumber(receipt?.blockedRequests);
-  receiptThirdParty.textContent = formatNumber(receipt?.thirdPartyDomains?.length);
+  const totalRequests = Math.max(0, Number(receipt?.totalRequests) || 0);
+  const thirdPartyRequests = Math.max(0, Number(receipt?.thirdPartyRequests) || 0);
+  receiptThirdParty.textContent = `${totalRequests ? Math.round(thirdPartyRequests / totalRequests * 100) : 0}%`;
   receiptCookies.textContent = formatNumber(receipt?.firstPartyCookies);
   receiptStorage.textContent = formatNumber((receipt?.localStorageKeys ?? 0) + (receipt?.sessionStorageKeys ?? 0));
-  const domains = (receipt?.thirdPartyDomains ?? []).map((entry) => entry.domain);
+  const domains = (receipt?.thirdPartyDomains ?? []).map((entry) => `${entry.domain} ×${formatNumber(entry.count)}`);
   receiptDomains.textContent = domains.length
-    ? t("receiptDomains", { domains: domains.join(" · ") })
+    ? t("receiptDomains", {
+      count: formatNumber(domains.length),
+      requests: formatNumber(thirdPartyRequests),
+      domains: domains.join(" · ")
+    })
     : t("receiptNoDomains");
 }
 
 async function refreshPrivacyReceipt() {
   if (privacyReceipt.hidden || !activeTab) return;
   privacyReceiptState.textContent = t("receiptCollecting");
-  const receipt = await chrome.runtime.sendMessage({
-    kind: "getSitePrivacyReceipt",
-    tabId: activeTab.id,
-    url: activeTab.url
-  });
-  renderPrivacyReceipt(receipt);
+  try {
+    const receipt = await popupRequest({
+      kind: "getSitePrivacyReceipt",
+      tabId: activeTab.id,
+      url: activeTab.url
+    });
+    renderPrivacyReceipt(receipt);
+  } catch {
+    privacyReceiptState.textContent = t("internalUnavailable");
+  }
 }
 
 function renderSnapshot(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.tabs)) throw new TypeError("Invalid Browser Monitor snapshot");
   latestSnapshot = snapshot;
   extensionToggle.checked = snapshot.extensionEnabled !== false;
   const heavyCount = snapshot.tabs.filter((tab) => tab.severity === "heavy" || tab.severity === "critical").length;
@@ -572,6 +834,7 @@ function renderSnapshot(snapshot) {
     : t("analysisPaused");
   tabsCount.textContent = snapshot.tabs.length;
   hostStatus.textContent = t("extensionOnly");
+  if (snapshot.stale || snapshot.error) summary.textContent = t("dataTemporarilyUnavailable");
 
   list.replaceChildren();
   moreTabs.hidden = true;
@@ -611,8 +874,8 @@ function renderSnapshot(snapshot) {
     text.addEventListener("click", () => showTabDetails(tab));
 
     const score = document.createElement("div");
-    score.className = "score";
-    score.textContent = tab.score;
+    score.className = `load-state ${tab.severity}`;
+    score.textContent = t(`severity${tab.severity[0].toUpperCase()}${tab.severity.slice(1)}`);
 
     const ecoButton = document.createElement("button");
     ecoButton.className = `eco-button${tab.ecoModeEnabled ? " active" : ""}`;
@@ -648,25 +911,59 @@ function showTabDetails(tab) {
   tabDetailPanel.hidden = false;
   tabDetailHost.textContent = hostname(tab.url);
   tabDetailName.textContent = tab.title || t("untitled");
-  tabDetailScore.textContent = tab.score;
+  tabDetailScore.textContent = t(`severity${tab.severity[0].toUpperCase()}${tab.severity.slice(1)}`);
   tabDetailDot.className = `dot ${tab.severity}`;
   tabDetailDot.style.background = "";
-  const visibility = tab.active ? t("activeTab") : (tab.visibility === "hidden" ? t("backgroundTab") : t("visibleTab"));
-  tabDetailState.textContent = `${visibility} · ${t(`severity${tab.severity[0].toUpperCase()}${tab.severity.slice(1)}`)}`;
+  const backgroundDuration = Math.max(0, Number(tab.metrics?.backgroundDurationSeconds) || 0);
+  const visibility = tab.active
+    ? t("activeTab")
+    : tab.visibility === "hidden"
+      ? backgroundDuration >= 60
+        ? t("backgroundFor", { duration: formatObservationTime(backgroundDuration) })
+        : t("recentlyBackground")
+      : t("visibleTab");
+  const confidence = t(tab.measurementConfidence === "full"
+    ? "measurementFull"
+    : tab.measurementConfidence === "unavailable"
+      ? "measurementUnavailable"
+      : "measurementPartial");
+  tabDetailState.textContent = `${visibility} · ${t(`severity${tab.severity[0].toUpperCase()}${tab.severity.slice(1)}`)} · ${confidence}`;
   tabDetailRecommendation.textContent = localizePerformanceText(tab.recommendation || t("noActionNeeded"));
   detailEcoButton.textContent = tab.ecoModeEnabled ? t("resumeNormalTab") : t("pauseThisTab");
-
-  const metrics = tab.metrics ?? {};
+  const metrics = metricMode === "recent" && tab.recentMetrics ? { ...tab.metrics, ...tab.recentMetrics } : (tab.metrics ?? {});
+  metricRecentTab.setAttribute("aria-selected", String(metricMode === "recent"));
+  metricTotalTab.setAttribute("aria-selected", String(metricMode === "total"));
+  const indicatorLabels = {
+    processor: t("indicatorProcessor"),
+    network: t("indicatorNetwork"),
+    stability: t("indicatorStability"),
+    background: t("indicatorBackground")
+  };
+  indicatorGrid.replaceChildren(...Object.entries(indicatorLabels).map(([key, label]) => {
+    const state = tab.indicators?.[key] ?? "normal";
+    const card = document.createElement("div");
+    card.className = `indicator-card ${state}`;
+    const dot = document.createElement("i");
+    const copy = document.createElement("span");
+    copy.textContent = label;
+    const value = document.createElement("strong");
+    value.textContent = t(`severity${state[0].toUpperCase()}${state.slice(1)}`);
+    card.append(dot, copy, value);
+    return card;
+  }));
   const values = [
     [t("metricLongFrames"), formatNumber(metrics.longFrameCount)],
     [t("metricBlocking"), `${Math.round(metrics.blockingDurationMS ?? 0)} ms`],
-    [t("metricLayout"), `${Math.round(metrics.forcedStyleAndLayoutDurationMS ?? 0)} ms`],
+    [t("metricLayout"), `${Math.round(metrics.forcedStyleAndLayoutDurationMS ?? 0)}ms · ${(Number(metrics.layoutShiftScore) || 0).toFixed(2)}`],
     [t("metricResources"), formatNumber(metrics.resourceCount)],
     [t("metricTransferred"), formatBytes(metrics.transferBytes)],
     [t("metricBackground"), formatNumber(metrics.backgroundEventCount)],
     [t("metricMedia"), formatNumber(metrics.mediaElementCount)],
-    [t("metricSample"), `${Math.round(metrics.sampleDurationSeconds ?? 0)} s`]
+    [t("metricSample"), formatObservationTime(metrics.sampleDurationSeconds)]
   ];
+  if (tab.sponsorBlockStatus) {
+    values.push([t("sponsorStatus"), t(`sponsorStatus_${tab.sponsorBlockStatus}`)]);
+  }
   metricGrid.replaceChildren(...values.map(([label, value]) => {
     const card = document.createElement("div");
     card.className = "metric-card";
@@ -677,6 +974,25 @@ function showTabDetails(tab) {
     card.append(caption, strong);
     return card;
   }));
+
+  const timeline = tab.recentMetrics?.timeline ?? [];
+  backgroundTimelineList.replaceChildren(...timeline.filter((entry) => entry.background).slice(-20).reverse().map((entry) => {
+    const item = document.createElement("li");
+    const detail = entry.type === "request" ? formatBytes(entry.bytes) : entry.type === "long-frame" ? `${Math.round(entry.durationMS || 0)} ms` : (Number(entry.value) || 0).toFixed(3);
+    item.textContent = `${new Date(entry.at).toLocaleTimeString(language === "ru" ? "ru-RU" : "en-US")} · ${t(`timeline_${entry.type}`)} · ${detail}`;
+    return item;
+  }));
+  if (!backgroundTimelineList.children.length) {
+    const item = document.createElement("li");
+    item.textContent = t("backgroundTimelineEmpty");
+    backgroundTimelineList.append(item);
+  }
+
+  const selectedLevel = document.querySelector('input[name="eco-level"]:checked')?.value ?? "limit";
+  ecoPreview.textContent = t(`ecoPreview_${selectedLevel}`) + (tab.score >= 45 && !tab.ecoModeEnabled ? ` · ${t("ecoRecommended")}` : "");
+  ecoRestoreStatus.textContent = tab.ecoModeEnabled
+    ? t("ecoStatusActive", { level: t(`ecoLevel_${tab.ecoModeLevel ?? "limit"}`) })
+    : tab.ecoRestoreStatus === "restoring" ? t("ecoStatusRestoring") : tab.ecoRestoreStatus === "restored" ? t("ecoStatusRestored") : "";
 
   const reasons = tab.reasons?.length ? tab.reasons : [t("noSignificantLoad")];
   tabDetailReasons.replaceChildren(...reasons.slice(0, 4).map((reason) => {
@@ -692,18 +1008,51 @@ function renderCookiePage() {
   const visible = currentCookies.slice(cookiePage * COOKIES_PER_PAGE, (cookiePage + 1) * COOKIES_PER_PAGE);
   cookieTable.replaceChildren(...visible.map((cookie) => {
     const row = document.createElement("tr");
-    const values = [
-      cookie.domain,
-      cookie.name,
-      cookie.value,
-      `${cookie.secure ? "S" : "—"}${cookie.httpOnly ? " H" : ""}`
-    ];
-    row.append(...values.map((value) => {
-      const cell = document.createElement("td");
-      cell.textContent = value;
-      cell.title = value;
-      return cell;
-    }));
+    const domainCell = document.createElement("td");
+    domainCell.textContent = cookie.domain;
+    domainCell.title = cookie.domain;
+
+    const identityCell = document.createElement("td");
+    const identity = document.createElement("div");
+    identity.className = "cookie-identity";
+    const name = document.createElement("span");
+    name.className = "cookie-name";
+    name.textContent = cookie.name || t("cookieUnnamed");
+    name.title = cookie.name || t("cookieUnnamed");
+    const maskedValue = document.createElement("button");
+    maskedValue.className = "cookie-value-toggle";
+    maskedValue.type = "button";
+    maskedValue.textContent = cookie.value ? "••••••" : "—";
+    maskedValue.disabled = !cookie.value;
+    maskedValue.title = cookie.value ? t("cookieRevealValue") : t("cookieEmptyValue");
+    maskedValue.setAttribute("aria-label", maskedValue.title);
+    maskedValue.setAttribute("aria-pressed", "false");
+    maskedValue.addEventListener("click", () => {
+      const revealing = maskedValue.getAttribute("aria-pressed") !== "true";
+      maskedValue.textContent = revealing ? cookie.value : "••••••";
+      maskedValue.classList.toggle("revealed", revealing);
+      maskedValue.setAttribute("aria-pressed", String(revealing));
+      maskedValue.title = t(revealing ? "cookieHideValue" : "cookieRevealValue");
+      maskedValue.setAttribute("aria-label", maskedValue.title);
+    });
+    identity.append(name, maskedValue);
+    identityCell.append(identity);
+
+    const flagsCell = document.createElement("td");
+    const flagLabels = [
+      cookie.secure ? "Secure" : "",
+      cookie.httpOnly ? "HttpOnly" : t("cookieScriptAccessibleShort"),
+      cookie.session ? t("cookieSession") : t("cookiePersistent"),
+      cookie.sameSite === "unspecified" ? t("cookieSameSiteMissing") : `SameSite: ${formatCookieSameSite(cookie.sameSite)}`,
+      cookie.partitionKey ? t("cookiePartitioned") : "",
+      !cookie.session && Number(cookie.expirationDate) - Date.now() / 1_000 > 400 * 24 * 60 * 60 ? t("cookieLongLived") : ""
+    ].filter(Boolean);
+    const flags = document.createElement("span");
+    flags.className = "cookie-flags-text";
+    flags.textContent = flagLabels.join(", ") || "—";
+    flags.title = `${flags.textContent} · ${formatCookieExpiry(cookie)}`;
+    flagsCell.append(flags);
+    row.append(domainCell, identityCell, flagsCell);
     return row;
   }));
   cookiesEmpty.hidden = currentCookies.length !== 0;
@@ -712,21 +1061,27 @@ function renderCookiePage() {
   nextCookies.disabled = cookiePage === pageCount - 1;
 }
 
+function formatCookieExpiry(cookie) {
+  if (cookie.session || !Number.isFinite(Number(cookie.expirationDate))) return t("cookieSessionHint");
+  const expires = new Date(Number(cookie.expirationDate) * 1_000);
+  return t("cookieExpires", { date: expires.toLocaleDateString(language) });
+}
+
+function formatCookieSameSite(value) {
+  return ({ no_restriction:"None", lax:"Lax", strict:"Strict" })[value] ?? String(value || "—");
+}
+
 async function openCookies() {
   tabDetailPanel.hidden = true;
   cookiesPanel.hidden = false;
-  const granted = await chrome.permissions.request({ permissions: ["cookies"] }).catch(() => false);
+  const granted = await ensureOptionalPermission("cookies", "cookiesPermissionPrompt");
   if (!granted) {
     cookieStatus.textContent = t("permissionRequired");
     return;
   }
   cookiePage = 0;
   cookieStatus.textContent = t("readingCookies");
-  const state = await chrome.runtime.sendMessage({
-    kind: "getCookieState",
-    url: activeTab?.url,
-    all: false
-  });
+  const state = await chrome.runtime.sendMessage({ kind: "getCookieState", url: activeTab?.url, all: false });
   currentCookies = state.cookies ?? [];
   cookiesHost.textContent = state.hostname ?? hostname(activeTab?.url);
   cookiesCount.textContent = currentCookies.length;
@@ -736,7 +1091,7 @@ async function openCookies() {
 
 async function requestCookieExport({ all = false, saveAs = false, copy = false } = {}) {
   const permission = copy ? "clipboardWrite" : "downloads";
-  const granted = await chrome.permissions.request({ permissions: [permission] }).catch(() => false);
+  const granted = await ensureOptionalPermission(permission, copy ? "clipboardWritePermissionPrompt" : "downloadsPermissionPrompt");
   if (!granted) {
     cookieStatus.textContent = t("permissionRequired");
     return;
@@ -829,19 +1184,28 @@ function renderProtection(state) {
 }
 
 async function refreshActiveTab() {
-  [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  [activeTab] = await withTimeout(
+    chrome.tabs.query({ active: true, currentWindow: true }),
+    POPUP_REQUEST_TIMEOUT_MS,
+    "Active tab"
+  );
   if (!activeTab || !/^https?:\/\//.test(activeTab.url ?? "")) activeTab = null;
   cookiesButton.disabled = !activeTab;
   blockElementButton.disabled = !activeTab;
 }
 
 async function refreshProtection() {
-  const state = await chrome.runtime.sendMessage({
-    kind: "getContentBlockingState",
-    tabId: activeTab?.id,
-    url: activeTab?.url
-  });
-  renderProtection(state);
+  try {
+    const state = await popupRequest({
+      kind: "getContentBlockingState",
+      tabId: activeTab?.id,
+      url: activeTab?.url
+    });
+    if (state?.error) throw new Error(state.error);
+    renderProtection(state);
+  } catch {
+    renderProtection({ enabled: extensionToggle.checked, contentBlockingConfigured: blockerToggle.checked });
+  }
 }
 
 async function refreshPictureInPictureState() {
@@ -853,7 +1217,7 @@ async function refreshPictureInPictureState() {
     return;
   }
   try {
-    const state = await chrome.runtime.sendMessage({
+    const state = await popupRequest({
       kind: "getPictureInPictureState",
       tabId: activeTab.id
     });
@@ -865,6 +1229,8 @@ async function refreshPictureInPictureState() {
       : (state.mediaElementCount > 0
           ? (state.mediaElementCount === 1 ? t("videoFoundOne") : t("videoFoundMany", { count: state.mediaElementCount }))
           : t("noVideoFound"));
+    toolStrip.prepend(state.mediaElementCount > 0 || state.active ? pipButton : cookiesButton);
+    updateToolNavigation();
   } catch {
     pipButton.disabled = true;
     pipStatus.textContent = t("reloadAfterInstall");
@@ -874,10 +1240,24 @@ async function refreshPictureInPictureState() {
 async function refresh() {
   refreshButton.disabled = true;
   try {
-    await refreshActiveTab();
-    const snapshot = await chrome.runtime.sendMessage({ kind: "collectNow" });
-    renderSnapshot(snapshot);
-    await Promise.all([refreshProtection(), refreshPictureInPictureState(), refreshPrivacyReceipt(), refreshSiteDataCleanup()]);
+    try {
+      await refreshActiveTab();
+    } catch {
+      activeTab = null;
+      cookiesButton.disabled = true;
+      blockElementButton.disabled = true;
+    }
+    try {
+      renderSnapshot(await popupRequest({ kind: "collectNow" }, "Tab snapshot"));
+    } catch {
+      renderLoadFailure();
+    }
+    await Promise.allSettled([
+      refreshProtection(),
+      refreshPictureInPictureState(),
+      refreshPrivacyReceipt(),
+      refreshSiteDataCleanup()
+    ]);
   } finally {
     refreshButton.disabled = false;
   }
@@ -972,7 +1352,7 @@ cleanupSiteButton.addEventListener("click", async () => {
   if (!activeTab) return;
   const enabling = cleanupSiteButton.getAttribute("aria-pressed") !== "true";
   if (enabling) {
-    const granted = await chrome.permissions.request({ permissions: ["browsingData"] });
+    const granted = await ensureOptionalPermission("browsingData", "browsingDataPermissionPrompt");
     if (!granted) {
       showSiteActionStatus(t("cleanupPermissionDenied"));
       return;
@@ -1033,6 +1413,8 @@ nextTabs.addEventListener("click", () => {
 closeTabDetail.addEventListener("click", closePanels);
 closeCookies.addEventListener("click", closePanels);
 closeDuplicates.addEventListener("click", closePanels);
+closeSiteReset.addEventListener("click", closePanels);
+closeReview.addEventListener("click", closePanels);
 duplicateTabsButton.addEventListener("click", openDuplicateTabs);
 closeAllDuplicates.addEventListener("click", closeDuplicateTabs);
 cookiesButton.addEventListener("click", openCookies);
@@ -1047,10 +1429,18 @@ detailEcoButton.addEventListener("click", async () => {
   if (!tab) return;
   detailEcoButton.disabled = true;
   try {
+    const level = document.querySelector('input[name="eco-level"]:checked')?.value ?? "limit";
+    if (!tab.ecoModeEnabled && level === "deep") {
+      const risk = await chrome.tabs.sendMessage(tab.tabId, { kind: "getPageRiskState" }).catch(() => ({}));
+      const prompt = risk.unsavedForm || risk.activeMedia ? t("ecoDeepRiskConfirm") : t("ecoDeepConfirm");
+      if (!confirm(prompt)) return;
+    }
     const updated = await chrome.runtime.sendMessage({
       kind: "setEcoMode",
       tabId: tab.tabId,
-      enabled: !tab.ecoModeEnabled
+      enabled: !tab.ecoModeEnabled,
+      level,
+      durationMinutes: Number(ecoDuration.value)
     });
     renderSnapshot(updated);
     const updatedTab = updated.tabs.find((candidate) => candidate.tabId === detailedTabId);
@@ -1059,6 +1449,16 @@ detailEcoButton.addEventListener("click", async () => {
     detailEcoButton.disabled = false;
   }
 });
+
+for (const button of [metricRecentTab, metricTotalTab]) button.addEventListener("click", () => {
+  metricMode = button === metricRecentTab ? "recent" : "total";
+  const tab = latestSnapshot?.tabs.find((candidate) => candidate.tabId === detailedTabId);
+  if (tab) showTabDetails(tab);
+});
+document.querySelectorAll('input[name="eco-level"]').forEach((input) => input.addEventListener("change", () => {
+  const tab = latestSnapshot?.tabs.find((candidate) => candidate.tabId === detailedTabId);
+  if (tab) showTabDetails(tab);
+}));
 
 previousCookies.addEventListener("click", () => {
   if (cookiePage === 0) return;
@@ -1075,33 +1475,54 @@ nextCookies.addEventListener("click", () => {
 exportCookies.addEventListener("click", () => requestCookieExport());
 saveAsCookies.addEventListener("click", () => requestCookieExport({ saveAs: true }));
 copyCookies.addEventListener("click", () => requestCookieExport({ copy: true }));
-exportAllCookies.addEventListener("click", () => {
-  const approved = confirm(
-    t("exportAllConfirm")
-  );
-  if (approved) requestCookieExport({ all: true, saveAs: true });
-});
+openCookieHistory.addEventListener("click", () => openExtensionTab(chrome.runtime.getURL("features/tools/cookie-history/cookie-history.html")));
 
 refreshButton.addEventListener("click", refresh);
 settingsButton.addEventListener("click", async () => {
   await chrome.runtime.openOptionsPage();
 });
 async function openActivityPage() {
-  await openExtensionWindow(chrome.runtime.getURL("features/analytics/activity/activity.html"), {
-    width: 1120,
-    height: 760
-  });
+  await openExtensionTab(chrome.runtime.getURL("features/analytics/activity/activity.html"));
 }
 headerActivityButton.addEventListener("click", openActivityPage);
 async function openStatisticsPage() {
-  await openExtensionWindow(chrome.runtime.getURL("features/analytics/statistics/statistics.html"), {
-    width: 860,
-    height: 680
-  });
+  await openExtensionTab(chrome.runtime.getURL("features/analytics/statistics/statistics.html"));
 }
 
-statisticsButton.addEventListener("click", openStatisticsPage);
 headerStatisticsButton.addEventListener("click", openStatisticsPage);
+siteResetButton.addEventListener("click", openSiteReset);
+applySiteReset.addEventListener("click", applySiteResetSelection);
+reviewButton.addEventListener("click", openReview);
+reviewTabsTab.addEventListener("click", () => selectReviewView("tabs"));
+reviewBookmarksTab.addEventListener("click", () => selectReviewView("bookmarks"));
+staleAge.addEventListener("change", loadStaleTabs);
+refreshStale.addEventListener("click", loadStaleTabs);
+selectStale.addEventListener("click", () => {
+  staleList.querySelectorAll("input[data-tab-id]").forEach((input) => { input.checked = true; });
+  selectedStaleTabIds();
+});
+closeStale.addEventListener("click", async () => {
+  const ids = selectedStaleTabIds();
+  const risky = ids.filter((id) => staleRiskById.get(id)?.unsavedForm || staleRiskById.get(id)?.activeMedia).length;
+  if (!ids.length || !confirm(t(risky ? "closeStaleRiskConfirm" : "closeStaleConfirm", { count: ids.length, risky }))) return;
+  await chrome.tabs.remove(ids);
+  reviewStatus.textContent = t("staleClosed", { count: ids.length });
+  await loadStaleTabs();
+  await refresh();
+});
+saveStale.addEventListener("click", async () => {
+  const ids = selectedStaleTabIds();
+  if (!ids.length) return;
+  const permission = await ensureOptionalPermission("bookmarks", "bookmarksPermissionPrompt");
+  if (!permission) return;
+  const folder = await chrome.bookmarks.create({ title: `Browser Monitor — ${new Date().toLocaleDateString(language === "ru" ? "ru-RU" : "en-US")}` });
+  for (const id of ids) {
+    const tab = currentStaleTabs.find((entry) => entry.id === id);
+    if (tab?.url) await chrome.bookmarks.create({ parentId: folder.id, title: tab.title || hostname(tab.url), url: tab.url });
+  }
+  reviewStatus.textContent = t("staleSaved", { count: ids.length });
+});
+scanBookmarks.addEventListener("click", runBookmarkReview);
 watchHistoryButton.addEventListener("click", () => {
   if (watchHistoryView.hidden) void openWatchHistoryView();
   else closeWatchHistoryView();
@@ -1138,19 +1559,30 @@ feedbackButton.addEventListener("click", async () => {
     : new URLSearchParams();
   const query = params.toString();
   const feedbackURL = chrome.runtime.getURL(`features/feedback/feedback.html${query ? `?${query}` : ""}`);
-  await openExtensionWindow(feedbackURL, { width: 580, height: 740 });
+  await openExtensionTab(feedbackURL);
 });
 
 async function bootstrap() {
-  const { uiPreferences } = await chrome.storage.local.get({ uiPreferences: { language: null, theme: "system" } });
-  language = uiPreferences.language || browserLanguage();
-  localizeDocument(language);
-  document.documentElement.dataset.theme = uiPreferences.theme === "system" ? "" : uiPreferences.theme;
-  await loadToolOrder();
-  await refresh();
-  updateToolLayout();
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  document.body.classList.remove("preload");
+  try {
+    const { uiPreferences } = await withTimeout(
+      chrome.storage.local.get({ uiPreferences: { language: null, theme: "system" } }),
+      POPUP_REQUEST_TIMEOUT_MS,
+      "UI preferences"
+    );
+    language = uiPreferences.language || browserLanguage();
+    localizeDocument(language);
+    document.documentElement.dataset.theme = uiPreferences.theme === "system" ? "" : uiPreferences.theme;
+    await withTimeout(loadToolOrder(), POPUP_REQUEST_TIMEOUT_MS, "Tool layout");
+    await refresh();
+  } catch {
+    language = browserLanguage();
+    localizeDocument(language);
+    renderLoadFailure();
+  } finally {
+    updateToolLayout();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    document.body.classList.remove("preload");
+  }
 }
 
 bootstrap();

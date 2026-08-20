@@ -6,26 +6,34 @@
     <title>Browser Monitor — Site Privacy Details</title>
     <link rel="stylesheet" href="../../analytics/statistics/statistics.css">
     <style>
-      body { min-height: 100vh; display: flex; flex-direction: column; background: var(--surface); color: var(--text-primary); }
-      .window-header { position: sticky; top: 0; z-index: 10; padding: 20px 24px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+      body { min-height: 100vh; display: flex; flex-direction: column; background: var(--surface); color: var(--text); }
+      .window-header { position: sticky; top: 0; z-index: 10; padding: 20px 24px; background: var(--surface); border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
       .brand { display: flex; align-items: center; gap: 16px; }
       .brand img { width: 48px; height: 48px; }
-      .brand h1 { margin: 0; font: 600 20px/28px var(--font-stack); letter-spacing: -0.01em; color: var(--text-primary); }
-      .brand p { margin: 2px 0 0; font: 400 13px/18px var(--font-stack); color: var(--text-secondary); max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .brand h1 { margin: 0; font-size:20px; font-weight:650; line-height:28px; letter-spacing: -0.01em; color: var(--text); }
+      .brand p { margin: 2px 0 0; color: var(--secondary); font-size:13px; line-height:18px; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       main { padding: 24px; flex-grow: 1; }
+      .receipt-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:24px; }
+      .summary-card { padding:16px; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
+      .summary-card span { display:block; color:var(--tertiary); font-size:11px; font-weight:600; line-height:16px; text-transform:uppercase; letter-spacing:.06em; }
+      .summary-card strong { display:block; margin-top:5px; color:var(--text); font-size:24px; font-weight:650; line-height:30px; }
+      .summary-card small { display:block; margin-top:3px; color:var(--secondary); font-size:11px; line-height:16px; }
       .list-grid { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items: start; }
-      .list-card { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: var(--shadow-sm); }
+      .list-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
       .section-title { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
-      .section-title h2 { margin: 0; font: 600 15px/22px var(--font-stack); color: var(--text-primary); }
-      .section-title span { font: 500 13px/20px var(--font-stack); color: var(--text-tertiary); padding: 2px 8px; background: var(--surface-hover); border-radius: 999px; }
+      .section-title h2 { margin: 0; color: var(--text); font-size:15px; font-weight:600; line-height:22px; }
+      .section-title span { padding: 2px 8px; border-radius: 999px; background: var(--panel-strong); color: var(--tertiary); font-size:13px; font-weight:500; line-height:20px; }
       .ranked-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-      .ranked-list li { display: flex; justify-content: space-between; padding: 6px 8px; border-radius: 6px; font: 13px/18px var(--font-stack); }
-      .ranked-list li:hover { background: var(--surface-hover); }
-      .ranked-list span { color: var(--text-primary); font-variant-numeric: tabular-nums; word-break: break-all; margin-right: 12px; }
-      .ranked-list strong { color: var(--text-secondary); font-weight: 500; }
-      .empty { font: 400 13px/20px var(--font-stack); color: var(--text-tertiary); margin: 0; padding: 12px 8px; text-align: center; }
-      footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: center; background: var(--surface); }
-      footer p { margin: 0; font: 12px/16px var(--font-stack); color: var(--text-tertiary); text-align: center; max-width: 480px; }
+      .ranked-list li { display: flex; justify-content: space-between; padding: 6px 8px; border-radius: 6px; font-size:13px; line-height:18px; }
+      .ranked-list li:hover { background: var(--panel-strong); }
+      .domain-entry { display:flex; min-width:0; align-items:center; gap:7px; margin-right:12px; }
+      .domain-entry > span:first-child { color: var(--text); font-variant-numeric: tabular-nums; word-break: break-all; }
+      .domain-category { flex:none; padding:2px 6px; border-radius:999px; background:var(--panel-strong); color:var(--tertiary)!important; font-size:9px; font-weight:650; text-transform:uppercase; letter-spacing:.04em; }
+      .ranked-list strong { color: var(--secondary); font-weight: 500; }
+      .empty { margin: 0; padding: 12px 8px; color: var(--tertiary); font-size:13px; line-height:20px; text-align: center; }
+      footer { padding: 16px 24px; border-top: 1px solid var(--line); display: flex; justify-content: center; background: var(--surface); }
+      footer p { margin: 0; color: var(--tertiary); font-size:12px; line-height:16px; text-align: center; max-width: 480px; }
+      @media(max-width:620px){.receipt-summary{grid-template-columns:1fr}.window-header,main{padding:16px}.brand img{width:40px;height:40px}}
     </style>
   </head>
   <body>
@@ -37,6 +45,11 @@
     </header>
 
     <main>
+      <section class="receipt-summary" aria-label="Request outcomes">
+        <article class="summary-card"><span data-i18n="receiptAllowedRequests">Allowed</span><strong id="allowed-total">0</strong><small data-i18n="receiptNetworkSource">Observed network requests</small></article>
+        <article class="summary-card"><span data-i18n="receiptBlockedRequests">Blocked</span><strong id="blocked-total">0</strong><small data-i18n="receiptProtectionSource">DNR and Browser Monitor guards</small></article>
+        <article class="summary-card"><span data-i18n="receiptUnknownRequests">Other failures</span><strong id="unknown-total">0</strong><small data-i18n="receiptUnknownSource">Cancelled, failed or not classified</small></article>
+      </section>
       <section class="list-grid">
         <article class="list-card">
           <div class="section-title"><div><h2 data-i18n="blockedResources">Blocked Trackers & Resources</h2></div><span id="blocked-count">0</span></div>
@@ -52,7 +65,7 @@
     </main>
 
     <footer>
-      <p data-i18n="receiptLocalOnly">This receipt is assembled locally and is not saved.</p>
+      <p><span data-i18n="receiptCategoryNote">Domain purposes are local filename heuristics, not verified ownership.</span> · <span data-i18n="receiptLocalOnly">Kept locally only for this visit.</span></p>
     </footer>
     <script type="module" src="receipt-details.js"></script>
   </body>

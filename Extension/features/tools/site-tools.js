@@ -1,19 +1,12 @@
+import { registrableDomain } from "../security/domain-intelligence.js";
+
 const TRACKING_PARAMETERS = new Set([
   "fbclid", "gclid", "yclid", "mc_cid", "mc_eid", "ref", "ref_src"
 ]);
-const COMMON_TWO_LEVEL_SUFFIXES = new Set([
-  "co.uk", "org.uk", "gov.uk", "com.au", "net.au", "org.au",
-  "co.jp", "co.nz", "com.br", "com.cn", "com.mx", "com.tr", "co.in"
-]);
-
 export function registrableSite(value) {
   try {
     const hostname = new URL(value).hostname.toLowerCase().replace(/^www\./, "");
-    const labels = hostname.split(".").filter(Boolean);
-    if (labels.length > 2 && COMMON_TWO_LEVEL_SUFFIXES.has(labels.slice(-2).join("."))) {
-      return labels.slice(-3).join(".");
-    }
-    return labels.length > 2 ? labels.slice(-2).join(".") : hostname;
+    return registrableDomain(hostname) || hostname;
   } catch {
     return "";
   }

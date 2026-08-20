@@ -31,28 +31,44 @@
     </aside>
 
     <main>
-      <header class="hero">
-        <div class="hero-copy">
-          <h1 data-i18n="settingsTitle">Settings</h1>
-          <p data-i18n="settingsDescription">Manage protection, tab analytics, page tools, and local data from one place.</p>
-        </div>
-        <div class="status-card">
-          <div class="status-orbit"><span></span><i></i></div>
-          <div><strong id="hero-status">Protection is on</strong><span data-i18n="statusDescription">Main browser protection status</span></div>
-        </div>
-      </header>
-
       <section id="general" class="settings-section settings-panel" role="tabpanel">
         <div class="section-intro"><div><h2 data-i18n="sectionGeneral">General</h2><p data-i18n="sectionGeneralDescription"></p></div></div>
         <div class="setting-grid feature-grid">
           <article class="setting-card featured"><div class="setting-icon shield">◈</div><div class="setting-copy"><h3 data-i18n="masterProtection"></h3><p data-i18n="masterProtectionDescription"></p></div><label class="switch"><input id="contentBlockingEnabled" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">⌁</div><div class="setting-copy"><h3 data-i18n="tabAnalysis"></h3><p data-i18n="tabAnalysisDescription"></p></div><label class="switch"><input id="monitoringEnabled" type="checkbox"><span></span></label></article>
         </div>
+        <article class="feature-map" aria-labelledby="feature-map-title">
+          <div class="feature-map-heading"><h3 id="feature-map-title" data-i18n="featureMapTitle">What Browser Monitor protects</h3><p data-i18n="featureMapDescription">Choose a function to see how it helps.</p></div>
+          <div class="feature-map-layout">
+            <div class="feature-tree">
+              <details class="feature-branch" open><summary data-i18n="featureBranchProtection">Protection</summary><div class="feature-nodes"><button class="feature-node active" type="button" data-feature-detail="detail-network" aria-pressed="true" data-i18n="featureNetwork">Network filters</button><button class="feature-node" type="button" data-feature-detail="detail-cleanup" aria-pressed="false" data-i18n="featureCleanup">Page cleanup</button><button class="feature-node" type="button" data-feature-detail="detail-video" aria-pressed="false" data-i18n="featureVideo">Video protection</button></div></details>
+              <details class="feature-branch"><summary data-i18n="featureBranchPrivacy">Privacy</summary><div class="feature-nodes"><button class="feature-node" type="button" data-feature-detail="detail-crypto" aria-pressed="false" data-i18n="cryptoGuardTitle">Crypto Guard</button><button class="feature-node" type="button" data-feature-detail="detail-links" aria-pressed="false" data-i18n="sectionLinkSafety">Link safety</button><button class="feature-node" type="button" data-feature-detail="detail-history" aria-pressed="false" data-i18n="sectionHistoryPrivacy">History filter</button></div></details>
+              <details class="feature-branch"><summary data-i18n="featureBranchActivity">Activity and tools</summary><div class="feature-nodes"><button class="feature-node" type="button" data-feature-detail="detail-analysis" aria-pressed="false" data-i18n="tabAnalysis">Tab analysis</button><button class="feature-node" type="button" data-feature-detail="detail-eco" aria-pressed="false">Eco Mode</button><button class="feature-node" type="button" data-feature-detail="detail-watching" aria-pressed="false" data-i18n="continueWatchingTitle">Continue watching</button><button class="feature-node" type="button" data-feature-detail="detail-tools" aria-pressed="false" data-i18n="featureBrowserTools">Browser tools</button></div></details>
+              <details class="feature-branch"><summary data-i18n="featureBranchControl">Control and data</summary><div class="feature-nodes"><button class="feature-node" type="button" data-feature-detail="detail-appearance" aria-pressed="false" data-i18n="sectionAppearance">Appearance</button><button class="feature-node" type="button" data-feature-detail="detail-rules" aria-pressed="false" data-i18n="sectionRules">Advanced rules</button><button class="feature-node" type="button" data-feature-detail="detail-data" aria-pressed="false" data-i18n="sectionData">Data and privacy</button></div></details>
+            </div>
+            <div class="feature-detail-panel" aria-live="polite">
+              <article id="detail-network" class="feature-detail"><span data-i18n="featureDetailProtectionLabel">Protection</span><h4 data-i18n="featureNetwork">Network filters</h4><p data-i18n="featureNetworkDetail">Stops advertising, tracking and mining requests before the page uses them.</p><small data-i18n="featureNetworkFact">Chrome applies declarative rules inside its network layer.</small></article>
+              <article id="detail-cleanup" class="feature-detail" hidden><span data-i18n="featureDetailProtectionLabel">Protection</span><h4 data-i18n="featureCleanup">Page cleanup</h4><p data-i18n="featureCleanupDetail"></p><small data-i18n="featureCleanupFact"></small></article>
+              <article id="detail-video" class="feature-detail" hidden><span data-i18n="featureDetailProtectionLabel">Protection</span><h4 data-i18n="featureVideo">Video protection</h4><p data-i18n="featureVideoDetail"></p><small data-i18n="featureVideoFact"></small></article>
+              <article id="detail-crypto" class="feature-detail" hidden><span data-i18n="featureDetailPrivacyLabel">Privacy</span><h4>Crypto Guard</h4><p data-i18n="featureCryptoDetail"></p><small data-i18n="featureCryptoFact"></small></article>
+              <article id="detail-links" class="feature-detail" hidden><span data-i18n="featureDetailPrivacyLabel">Privacy</span><h4 data-i18n="sectionLinkSafety">Link safety</h4><p data-i18n="featureLinksDetail"></p><small data-i18n="featureLinksFact"></small></article>
+              <article id="detail-history" class="feature-detail" hidden><span data-i18n="featureDetailPrivacyLabel">Privacy</span><h4 data-i18n="sectionHistoryPrivacy">History filter</h4><p data-i18n="featureHistoryDetail"></p><small data-i18n="featureHistoryFact"></small></article>
+              <article id="detail-analysis" class="feature-detail" hidden><span data-i18n="featureDetailActivityLabel">Activity</span><h4 data-i18n="tabAnalysis">Tab analysis</h4><p data-i18n="featureAnalysisDetail"></p><small data-i18n="featureAnalysisFact"></small></article>
+              <article id="detail-eco" class="feature-detail" hidden><span data-i18n="featureDetailActivityLabel">Activity</span><h4>Eco Mode</h4><p data-i18n="featureEcoDetail"></p><ul class="feature-detail-list"><li><strong data-i18n="ecoPauseMedia"></strong><span data-i18n="featureEcoPauseDetail"></span></li><li><strong data-i18n="ecoLimitBackground"></strong><span data-i18n="featureEcoLimitDetail"></span></li><li><strong data-i18n="ecoDeepSleep"></strong><span data-i18n="featureEcoDeepDetail"></span></li></ul><small data-i18n="featureEcoFact"></small></article>
+              <article id="detail-watching" class="feature-detail" hidden><span data-i18n="featureDetailActivityLabel">Activity</span><h4 data-i18n="continueWatchingTitle">Continue watching</h4><p data-i18n="featureWatchingDetail"></p><small data-i18n="featureWatchingFact"></small></article>
+              <article id="detail-tools" class="feature-detail" hidden><span data-i18n="featureDetailActivityLabel">Activity</span><h4 data-i18n="featureBrowserTools">Browser tools</h4><p data-i18n="featureToolsDetail"></p><small data-i18n="featureToolsFact"></small></article>
+              <article id="detail-appearance" class="feature-detail" hidden><span data-i18n="featureDetailControlLabel">Control</span><h4 data-i18n="sectionAppearance">Appearance</h4><p data-i18n="featureAppearanceDetail"></p><small data-i18n="featureAppearanceFact"></small></article>
+              <article id="detail-rules" class="feature-detail" hidden><span data-i18n="featureDetailControlLabel">Control</span><h4 data-i18n="sectionRules">Advanced rules</h4><p data-i18n="featureRulesDetail"></p><small data-i18n="featureRulesFact"></small></article>
+              <article id="detail-data" class="feature-detail" hidden><span data-i18n="featureDetailControlLabel">Control</span><h4 data-i18n="sectionData">Data and privacy</h4><p data-i18n="featureDataDetail"></p><small data-i18n="featureDataFact"></small></article>
+            </div>
+          </div>
+        </article>
       </section>
 
       <section id="protection" class="settings-section settings-panel" role="tabpanel" hidden>
         <div class="section-intro"><div><h2 data-i18n="sectionProtectionCenter">Protection</h2><p data-i18n="sectionProtectionCenterDescription"></p></div></div>
-        <div class="settings-cluster">
+        <div class="subsection-tabs" role="tablist" aria-label="Protection settings"><button type="button" role="tab" aria-selected="true" data-subsection-tab="protection-cleanup" data-i18n="pageCleanupGroup">Page cleanup</button><button type="button" role="tab" aria-selected="false" data-subsection-tab="protection-filters" data-i18n="filterListsGroup">Network and list filters</button></div>
+        <div class="settings-cluster subsection-panel" data-subsection-panel="protection-filters" role="tabpanel" hidden>
           <div class="cluster-heading"><h3 data-i18n="filterListsGroup">Filter lists</h3><p data-i18n="filterListsGroupDescription"></p></div>
           <div class="setting-grid">
           <article class="setting-card"><div class="setting-icon">A</div><div class="setting-copy"><h3 data-i18n="easyList"></h3><p data-i18n="easyListDescription"></p></div><label class="switch"><input data-setting="adFilterEnabled" type="checkbox"><span></span></label></article>
@@ -65,7 +81,7 @@
           </div>
         </div>
 
-        <div class="settings-cluster">
+        <div class="settings-cluster subsection-panel" data-subsection-panel="protection-cleanup" role="tabpanel">
           <div class="cluster-heading"><h3 data-i18n="pageCleanupGroup">Page cleanup</h3><p data-i18n="pageCleanupGroupDescription"></p></div>
           <div class="setting-grid">
           <article class="setting-card"><div class="setting-icon">✓</div><div class="setting-copy"><h3 data-i18n="cookieBanners"></h3><p data-i18n="cookieBannersDescription"></p></div><label class="switch"><input data-setting="cookieBannerBlockingEnabled" type="checkbox"><span></span></label></article>
@@ -82,33 +98,24 @@
 
       <section id="privacy" class="settings-section settings-panel" role="tabpanel" hidden>
         <div class="section-intro"><div><h2 data-i18n="sectionPrivacyTools">Privacy</h2><p data-i18n="sectionPrivacyToolsDescription"></p></div></div>
-        <div class="settings-cluster">
-          <div class="cluster-heading"><h3 data-i18n="automaticProtectionGroup">Automatic local protection</h3><p data-i18n="automaticProtectionGroupDescription"></p></div>
+        <div class="subsection-tabs" role="tablist" aria-label="Privacy settings"><button type="button" role="tab" aria-selected="true" data-subsection-tab="privacy-security" data-i18n="securityGroup">Security</button><button type="button" role="tab" aria-selected="false" data-subsection-tab="privacy-history" data-i18n="sectionHistoryPrivacy">History filter</button></div>
+        <div class="settings-cluster subsection-panel" data-subsection-panel="privacy-security" role="tabpanel">
+          <div class="cluster-heading"><h3 data-i18n="securityGroup">Security</h3><p data-i18n="securityGroupDescription"></p></div>
           <div class="setting-grid">
-            <article class="setting-card featured"><div class="setting-icon">₿</div><div class="setting-copy"><h3 data-i18n="cryptoGuardTitle"></h3><p data-i18n="cryptoGuardDescription"></p></div><span class="always-on-badge" data-i18n="alwaysOn">Always on</span></article>
-            <article class="setting-card"><div class="setting-icon">▶</div><div class="setting-copy"><h3 data-i18n="continueWatchingTitle"></h3><p data-i18n="continueWatchingDescription"></p></div><span class="always-on-badge" data-i18n="localOnlyBadge">Local</span></article>
-          </div>
-        </div>
-
-        <div class="settings-cluster">
-          <div class="cluster-heading"><h3 data-i18n="sectionLinkSafety">Link safety</h3><p data-i18n="sectionLinkSafetyDescription"></p></div>
-          <div class="setting-grid">
-          <article class="setting-card featured"><div class="setting-icon">🔍</div><div class="setting-copy"><h3 data-i18n="searchProtection"></h3><p data-i18n="searchProtectionDescription"></p></div><label class="switch"><input data-setting="searchProtectionEnabled" type="checkbox"><span></span></label></article>
-          <article class="setting-card featured"><div class="setting-icon">!</div><div class="setting-copy"><h3 data-i18n="linkSafetyEnabled"></h3><p data-i18n="linkSafetyEnabledDescription"></p></div><label class="switch"><input data-link-safety-setting="enabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card featured"><div class="setting-icon">₿</div><div class="setting-copy"><h3 data-i18n="cryptoGuardTitle"></h3><p data-i18n="cryptoGuardDescription"></p></div><label class="switch"><input data-feature-setting="cryptoGuardEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card featured"><div class="setting-icon">▶</div><div class="setting-copy"><h3 data-i18n="continueWatchingTitle"></h3><p data-i18n="continueWatchingDescription"></p></div><label class="switch"><input data-feature-setting="continueWatchingEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">🔍</div><div class="setting-copy"><h3 data-i18n="searchProtection"></h3><p data-i18n="searchProtectionDescription"></p></div><label class="switch"><input data-setting="searchProtectionEnabled" type="checkbox"><span></span></label></article>
+          <article class="setting-card"><div class="setting-icon">!</div><div class="setting-copy"><h3 data-i18n="linkSafetyEnabled"></h3><p data-i18n="linkSafetyEnabledDescription"></p></div><label class="switch"><input data-link-safety-setting="enabled" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">↪</div><div class="setting-copy"><h3 data-i18n="warnShorteners"></h3><p data-i18n="warnShortenersDescription"></p></div><label class="switch"><input data-link-safety-setting="warnShorteners" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">≋</div><div class="setting-copy"><h3 data-i18n="warnLookalikes"></h3><p data-i18n="warnLookalikesDescription"></p></div><label class="switch"><input data-link-safety-setting="warnLookalikes" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">xn</div><div class="setting-copy"><h3 data-i18n="warnPunycode"></h3><p data-i18n="warnPunycodeDescription"></p></div><label class="switch"><input data-link-safety-setting="warnPunycode" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">?</div><div class="setting-copy"><h3 data-i18n="warnRedirects"></h3><p data-i18n="warnRedirectsDescription"></p></div><label class="switch"><input data-link-safety-setting="warnRedirects" type="checkbox"><span></span></label></article>
           <article class="setting-card"><div class="setting-icon">@</div><div class="setting-copy"><h3 data-i18n="warnUnknownFromSocial"></h3><p data-i18n="warnUnknownFromSocialDescription"></p></div><label class="switch"><input data-link-safety-setting="warnUnknownFromSocial" type="checkbox"><span></span></label></article>
+          <article class="setting-card domain-lists-card"><div class="setting-icon">≡</div><div class="setting-copy"><h3 data-i18n="domainListsTitle">Domain lists</h3><p data-i18n="domainListsDescription">Manage destinations that are always trusted or always blocked.</p><div class="domain-list-buttons"><button id="open-allowed-domains" class="secondary-button" type="button" data-i18n="linkSafetyAllowedDomains"></button><button id="open-blocked-domains" class="secondary-button" type="button" data-i18n="linkSafetyBlockedDomains"></button></div></div></article>
           </div>
-          <div class="rule-grid">
-            <label class="editor-card"><strong data-i18n="linkSafetyAllowedDomains"></strong><span data-i18n="linkSafetyAllowedDomainsDescription"></span><textarea id="linkSafetyAllowedDomains" rows="5" spellcheck="false"></textarea></label>
-            <label class="editor-card"><strong data-i18n="linkSafetyBlockedDomains"></strong><span data-i18n="linkSafetyBlockedDomainsDescription"></span><textarea id="linkSafetyBlockedDomains" rows="5" spellcheck="false"></textarea></label>
-          </div>
-          <div class="section-actions"><button id="save-link-safety" class="primary-button" data-i18n="saveLinkSafety"></button></div>
         </div>
 
-        <div class="settings-cluster">
+        <div class="settings-cluster subsection-panel" data-subsection-panel="privacy-history" role="tabpanel" hidden>
           <div class="cluster-heading"><h3 data-i18n="sectionHistoryPrivacy">History filter</h3><p data-i18n="sectionHistoryPrivacyDescription"></p></div>
           <div class="setting-grid compact-grid">
             <article class="setting-card featured"><div class="setting-icon">H</div><div class="setting-copy"><h3 data-i18n="historyPrivacyEnabled"></h3><p data-i18n="historyPrivacyEnabledDescription"></p></div><label class="switch"><input id="historyPrivacyEnabled" type="checkbox"><span></span></label></article>
@@ -119,6 +126,12 @@
           <div class="section-actions"><button id="save-history-privacy" class="primary-button" data-i18n="saveHistoryPrivacy"></button><button id="purge-history-privacy" class="secondary-button" data-i18n="purgeHistoryPrivacy"></button></div>
         </div>
       </section>
+
+      <dialog id="domain-lists-dialog" class="settings-dialog" aria-labelledby="domain-lists-dialog-title">
+        <div class="dialog-heading"><div><h2 id="domain-lists-dialog-title" data-i18n="domainListsTitle">Domain lists</h2><p data-i18n="domainListsDialogDescription">Add one main domain per line.</p><p id="built-in-trusted-domains" class="built-in-domain-note"></p></div><button id="close-domain-lists" class="dialog-close" type="button" data-i18n-aria-label="close">×</button></div>
+        <div class="dialog-domain-grid"><div class="domain-field"><label for="linkSafetyAllowedDomains"><strong data-i18n="linkSafetyAllowedDomains"></strong><span data-i18n="linkSafetyAllowedDomainsDescription"></span></label><textarea id="linkSafetyAllowedDomains" rows="8" spellcheck="false"></textarea></div><div class="domain-field"><label for="linkSafetyBlockedDomains"><strong data-i18n="linkSafetyBlockedDomains"></strong><span data-i18n="linkSafetyBlockedDomainsDescription"></span></label><textarea id="linkSafetyBlockedDomains" rows="8" spellcheck="false"></textarea></div></div>
+        <div class="dialog-actions"><button id="cancel-domain-lists" class="secondary-button" type="button" data-i18n="cancel">Cancel</button><button id="save-link-safety" class="primary-button" type="button" data-i18n="saveLinkSafety"></button></div>
+      </dialog>
 
       <section id="appearance" class="settings-section settings-panel" role="tabpanel" hidden>
         <div class="section-intro"><div><h2 data-i18n="sectionAppearance"></h2><p data-i18n="sectionAppearanceDescription"></p></div></div>
@@ -157,16 +170,16 @@
       <section id="data" class="settings-section settings-panel" role="tabpanel" hidden>
         <div class="section-intro"><div><h2 data-i18n="sectionData"></h2><p data-i18n="sectionDataDescription"></p></div></div>
         <div class="data-grid">
-          <article class="info-card local-card"><div class="info-symbol">⌂</div><div><h3 data-i18n="localOnly"></h3><p data-i18n="localOnlyDescription"></p></div></article>
-          <article class="info-card"><div class="info-symbol">↕</div><div><h3 data-i18n="backup"></h3><p data-i18n="backupDescription"></p><div class="button-row"><button id="export-settings" class="secondary-button" data-i18n="exportSettings"></button><button id="import-settings" class="secondary-button" data-i18n="importSettings"></button><button id="reset-settings" class="quiet-button danger" data-i18n="resetSettings"></button></div><input id="settings-file-input" type="file" accept="application/json" hidden></div></article>
+          <article class="info-card data-card"><div class="data-card-heading"><h3 data-i18n="activityDataSettings">Activity data</h3><button class="info-button" type="button" aria-describedby="activity-tooltip" data-i18n-aria-label="moreInformation">i</button><span id="activity-tooltip" class="system-tooltip" role="tooltip" data-i18n="activityDataTooltip"></span></div><p data-i18n="activityDataSettingsDescription">Control local retention and sites excluded from analytics.</p><div class="form-grid"><label><span data-i18n="activityRetention">Retention</span><select id="activity-retention"><option value="7" data-i18n="stale7Days">7 days</option><option value="30" data-i18n="stale30Days">30 days</option><option value="90" data-i18n="retention90Days">90 days</option></select></label><label><span data-i18n="activityReferenceHours">Reference period, hours</span><input id="activity-reference-hours" type="number" min="1" max="24" value="8"></label><label class="full"><span data-i18n="activityExclusions">Excluded sites</span><textarea id="activity-exclusions" rows="4" spellcheck="false" placeholder="bank.example"></textarea></label></div></article>
+          <article class="info-card data-card"><div class="data-card-heading"><h3 data-i18n="toolBehaviorSettings">Tool behavior</h3><button class="info-button" type="button" aria-describedby="behavior-tooltip" data-i18n-aria-label="moreInformation">i</button><span id="behavior-tooltip" class="system-tooltip" role="tooltip" data-i18n="toolBehaviorTooltip"></span></div><p data-i18n="toolBehaviorSettingsDescription">Defaults for Eco Mode, video history and local request diagnostics.</p><div class="form-grid"><label><span data-i18n="ecoDefaultLevel">Eco Mode default</span><select id="eco-default-level"><option value="pause" data-i18n="ecoPauseMedia">Pause media</option><option value="limit" data-i18n="ecoLimitBackground">Limit background</option><option value="deep" data-i18n="ecoDeepSleep">Deep sleep</option></select></label><label><span data-i18n="continueRetention">Continue Watching retention</span><select id="continue-retention"><option value="7" data-i18n="stale7Days">7 days</option><option value="30" data-i18n="stale30Days">30 days</option><option value="90" data-i18n="retention90Days">90 days</option></select></label><label class="checkbox-row"><input id="blocking-journal-enabled" type="checkbox"><span data-i18n="blockingJournalEnabled">Record a local blocking journal only while enabled</span></label><label class="checkbox-row"><input id="tracking-cleaner-enabled" type="checkbox"><span data-i18n="trackingCleanerEnabled">Remove known tracking parameters from opened links</span></label></div><div class="button-row card-actions"><button id="save-feature-preferences" class="primary-button" data-i18n="saveDataSettings">Save data settings</button></div></article>
+          <article class="info-card data-card compact-data-card"><div class="data-card-heading"><h3 data-i18n="backup"></h3><button class="info-button" type="button" aria-describedby="backup-tooltip" data-i18n-aria-label="moreInformation">i</button><span id="backup-tooltip" class="system-tooltip" role="tooltip" data-i18n="backupTooltip"></span></div><p data-i18n="backupDescription"></p><div class="button-row card-actions"><button id="export-settings" class="secondary-button" data-i18n="exportSettings"></button><button id="import-settings" class="secondary-button" data-i18n="importSettings"></button></div><input id="settings-file-input" type="file" accept="application/json" hidden></article>
+          <article class="info-card data-card compact-data-card diagnostics-card"><div class="data-card-heading"><h3 data-i18n="diagnosticBundle">Diagnostic bundle</h3><button class="info-button" type="button" aria-describedby="diagnostic-tooltip" data-i18n-aria-label="moreInformation">i</button><span id="diagnostic-tooltip" class="system-tooltip" role="tooltip" data-i18n="diagnosticTooltip"></span></div><p data-i18n="diagnosticBundleDescription">Exports the version, settings, active rule counts, permission state and recent local errors.</p><div class="button-row card-actions"><button id="export-diagnostics" class="secondary-button" data-i18n="exportDiagnostics">Export diagnostics</button></div></article>
         </div>
       </section>
       <section id="feedback" class="settings-section settings-panel" role="tabpanel" hidden>
         <div class="section-intro"><div><h2 data-i18n="sectionFeedback">Feedback</h2><p data-i18n="sectionFeedbackDescription"></p></div></div>
-        <article class="info-card local-card feedback-card">
-          <div class="info-symbol">✦</div>
-          <div><h3 data-i18n="feedbackCardTitle"></h3><p data-i18n="feedbackCardDescription"></p><div class="button-row"><button id="open-feedback" class="primary-button" data-i18n="openFeedback"></button></div></div>
-        </article>
+        <article class="info-card feedback-card"><div><h3 data-i18n="feedbackCardTitle"></h3><p data-i18n="feedbackCardDescription"></p></div><button id="open-feedback" class="feedback-arrow" type="button" data-i18n-aria-label="openFeedback"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></article>
+        <div class="contact-panel"><p data-i18n="contactIntro">You can also contact the developer directly.</p><div class="contact-links"><a href="https://x.com/not__jas" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 4 14 16M19 4 5 20"/></svg><span>X · @not__jas</span></a><a href="https://github.com/Jas952/BrowserMonitor" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 20c-4 1.2-4-2-5-2m10 4v-3.2c0-.9.1-1.5-.4-2 3.2-.4 6.6-1.6 6.6-7A5.4 5.4 0 0 0 17.8 6 5 5 0 0 0 17.7 3S16.6 2.6 13 4.4a12 12 0 0 0-6 0C3.4 2.6 2.3 3 2.3 3A5 5 0 0 0 2.2 6 5.4 5.4 0 0 0 .8 9.8c0 5.4 3.4 6.6 6.6 7-.5.5-.5 1-.4 2V22"/></svg><span>GitHub · Jas952</span></a><a href="mailto:dev.dmitriy.lb9@gmail.com"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3Zm0 1 9 7 9-7"/></svg><span>dev.dmitriy.lb9@gmail.com</span></a><a href="https://t.me/Jas953" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 17-7-4 16-5-4-3 3v-5l8-7-10 6Z"/></svg><span>Telegram · Jas953</span></a></div></div>
       </section>
       <div id="save-toast" role="status" aria-live="polite"></div>
     </main>

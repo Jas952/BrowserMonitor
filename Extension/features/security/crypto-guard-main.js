@@ -4,6 +4,10 @@
   const clipboard = navigator.clipboard;
   const originalWriteText = clipboard?.writeText?.bind(clipboard);
   if (!originalWriteText) return;
+  let enabled = false;
+  window.addEventListener("browser-monitor-crypto-guard-state", (event) => {
+    enabled = event.detail?.enabled === true;
+  });
 
   const clean = (value) => String(value ?? "")
     .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
@@ -15,6 +19,7 @@
   };
 
   const protectedWriteText = async (value) => {
+    if (!enabled) return originalWriteText(value);
     const original = String(value ?? "");
     const protectedValue = looksLikeWalletAddress(original) ? clean(original) : original;
     try {

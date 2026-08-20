@@ -6,7 +6,8 @@ import {
   evaluateLinkSafety,
   normalizeLinkSafetySettings,
   parseURLParts,
-  sanitizeLinkSafetyDomains
+  sanitizeLinkSafetyDomains,
+  sanitizeLinkSafetyTrustedHosts
 } from "../features/security/link-safety.js";
 import {
   normalizeBlockingStatistics,
@@ -33,6 +34,17 @@ import {
   registrableSite,
   sanitizeCleanupSites
 } from "../features/tools/site-tools.js";
+import {
+  normalizePrivacySessions,
+  serializePrivacySessions
+} from "../features/tools/privacy-sessions.js";
+import { withTimeout } from "./async-utils.js";
+import { cleanTrackingURL, sanitizeStoredMediaURL } from "../features/security/clean-link.js";
+import {
+  DEFAULT_FEATURE_PREFERENCES,
+  normalizeFeaturePreferences,
+  siteIsExcluded
+} from "../features/tools/feature-preferences.js";
 
 const ALARM_NAME = "collect-browser-snapshot";
 const CUSTOM_FILTER_FIRST_RULE_ID = 630_000;
@@ -42,13 +54,20 @@ const CUSTOM_FILTER_MAX_BYTES = 1_048_576;
 const BLOCKING_STATISTICS_KEY = "blockingStatistics";
 const ACTIVITY_STATISTICS_KEY = "siteActivityStatistics";
 const SITE_DATA_CLEANUP_KEY = "siteDataCleanupSites";
+const PRIVACY_SESSIONS_KEY = "privacyReceiptSessions";
+const TAB_ORIGINS_KEY = "siteCleanupTabOrigins";
+const COOKIE_CHANGES_KEY = "recentCookieChanges";
+const PENDING_SITE_RESETS_KEY = "pendingSiteResets";
+const SITE_RESET_ALARM_PREFIX = "site-reset:";
 const REDIRECT_HISTORY_KEY = "redirectHistory";
+const FEATURE_PREFERENCES_KEY = "featurePreferences";
+const BLOCKING_JOURNAL_KEY = "blockingRequestJournal";
+const ONE_RELOAD_BYPASS_KEY = "oneReloadBypassSites";
 const CONTINUE_WATCHING_KEY = "continueWatching";
 const SPONSOR_CACHE_KEY = "sponsorSegmentCache";
 const SPONSOR_CACHE_LIMIT = 80;
 const SPONSOR_CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
 const CONTINUE_WATCHING_LIMIT = 100;
-const CONTINUE_WATCHING_TTL_MS = 90 * 24 * 60 * 60 * 1_000;
 const CRYPTO_GUARD_COPY_TTL_MS = 5 * 60 * 1_000;
 const DEFAULT_PROTECTION_SETTINGS = {
   cookieBannerBlockingEnabled: false,
@@ -101,15 +120,58 @@ let activityStatisticsWrite = Promise.resolve();
 let continueWatchingWrite = Promise.resolve();
 let cryptoGuardCopy = null;
 const privacySessions = new Map();
+let privacySessionsHydration = null;
+let privacySessionsPersistTimer = null;
+let privacySessionsWrite = Promise.resolve();
 const lastTabOrigins = new Map();
+let tabOriginsHydration = null;
+let tabOriginsPersistTimer = null;
+let cookieChangeWrite = Promise.resolve();
 const redirectRequests = new Map();
+const sponsorStatusByTab = new Map();
 let redirectHistoryWrite = Promise.resolve();
+let blockingJournalWrite = Promise.resolve();
 const BLOCKING_STATISTICS_FLUSH_DELAY_MS = 2_000;
 const BLOCKING_STATISTICS_BATCH_SIZE = 500;
+const PRIVACY_SESSION_FLUSH_DELAY_MS = 1_000;
+const TAB_ORIGINS_FLUSH_DELAY_MS = 500;
 
 chrome.storage.local.get({ contentBlockingEnabled: true }).then(({ contentBlockingEnabled }) => {
   contentBlockingEnabledCached = contentBlockingEnabled !== false;
 }).catch(() => {});
+
+async function featurePreferencesStorage() {
+  const stored = await chrome.storage.local.get({ [FEATURE_PREFERENCES_KEY]: DEFAULT_FEATURE_PREFERENCES });
+  return normalizeFeaturePreferences(stored[FEATURE_PREFERENCES_KEY]);
+}
+
+async function inspectBookmarkURL(rawURL) {
+  const parsed = parseURLParts(rawURL);
+  if (!parsed) return { url: String(rawURL), status: "invalid", statusCode: 0, finalURL: "" };
+  try {
+    const response = await withTimeout(fetch(parsed.href, { method: "HEAD", redirect: "follow", cache: "no-store", credentials: "omit" }), 6_000, "Bookmark check");
+    const finalURL = response.url || parsed.href;
+    return {
+      url: parsed.href,
+      status: response.ok ? (finalURL !== parsed.href ? "redirect" : "healthy") : "unavailable",
+      statusCode: response.status,
+      finalURL
+    };
+  } catch {
+    return { url: parsed.href, status: "unavailable", statusCode: 0, finalURL: "" };
+  }
+}
+
+async function inspectBookmarkURLs(urls) {
+  const queue = [...new Set((Array.isArray(urls) ? urls : []).map(String))].slice(0, 200);
+  const results = [];
+  let next = 0;
+  async function worker() {
+    while (next < queue.length) results.push(await inspectBookmarkURL(queue[next++]));
+  }
+  await Promise.all(Array.from({ length: Math.min(6, queue.length) }, worker));
+  return results;
+}
 
 function sanitizedStringList(values, { limit, maximumLength, transform = (value) => value } = {}) {
   const result = [];
@@ -210,7 +272,7 @@ async function linkSafetyStorage() {
   });
   return {
     settings: normalizeLinkSafetySettings(stored.linkSafetySettings),
-    allowedDomains: sanitizeLinkSafetyDomains(stored.linkSafetyAllowedDomains),
+    allowedDomains: sanitizeLinkSafetyTrustedHosts(stored.linkSafetyAllowedDomains),
     blockedDomains: sanitizeLinkSafetyDomains(stored.linkSafetyBlockedDomains)
   };
 }
@@ -318,7 +380,7 @@ async function setLinkSafetySettings(partial) {
     updatedAt: new Date().toISOString()
   });
   const nextAllowed = partial?.allowedDomains
-    ? sanitizeLinkSafetyDomains(partial.allowedDomains)
+    ? sanitizeLinkSafetyTrustedHosts(partial.allowedDomains)
     : current.allowedDomains;
   const nextBlocked = partial?.blockedDomains
     ? sanitizeLinkSafetyDomains(partial.blockedDomains)
@@ -339,6 +401,7 @@ function linkWarningURL(result, targetUrl, sourceUrl = "") {
     domain: result.registrableDomain ?? "",
     source: sourceUrl
   });
+  for (const name of result.removedTrackingParameters ?? []) parameters.append("removed", name);
   for (const reason of result.reasons.slice(0, 8)) {
     parameters.append("reason", reason.message);
   }
@@ -356,6 +419,8 @@ async function evaluateLinkSafetyForNavigation(message, sender) {
     ...state,
     sourceUrl
   });
+  result.removedTrackingParameters = Array.isArray(message.removedTrackingParameters)
+    ? message.removedTrackingParameters.map(String).slice(0, 30) : [];
   if (!["warn", "block"].includes(result.action)) return { ...result, warningUrl: "" };
   enqueueBlockingEvent({
     type: "link",
@@ -370,13 +435,13 @@ async function evaluateLinkSafetyForNavigation(message, sender) {
 
 async function allowLinkSafetyDomain(domain) {
   const parsed = parseURLParts(domain);
-  const registrableDomain = parsed?.registrableDomain ?? "";
-  if (!registrableDomain) throw new Error("The domain could not be identified");
+  const trustedHost = parsed?.hostname ?? "";
+  if (!trustedHost) throw new Error("The domain could not be identified");
   const state = await linkSafetyStorage();
-  const allowedDomains = [...new Set([...state.allowedDomains, registrableDomain])].sort().slice(0, 500);
-  const blockedDomains = state.blockedDomains.filter((value) => value !== registrableDomain);
+  const allowedDomains = [...new Set([...state.allowedDomains, trustedHost])].sort().slice(0, 500);
+  const blockedDomains = state.blockedDomains.filter((value) => value !== parsed.registrableDomain);
   await chrome.storage.local.set({ linkSafetyAllowedDomains: allowedDomains, linkSafetyBlockedDomains: blockedDomains });
-  return { ok: true, domain: registrableDomain, allowedDomains, blockedDomains };
+  return { ok: true, domain: trustedHost, allowedDomains, blockedDomains };
 }
 
 async function blockLinkSafetyDomain(domain) {
@@ -403,14 +468,88 @@ function registrableDomainFromURL(value) {
   return parseURLParts(value)?.registrableDomain ?? hostnameFromURL(value);
 }
 
+function ensureTabOriginsHydrated() {
+  if (!tabOriginsHydration) {
+    tabOriginsHydration = chrome.storage.session.get({ [TAB_ORIGINS_KEY]: {} }).then((stored) => {
+      lastTabOrigins.clear();
+      for (const [rawTabId, rawOrigin] of Object.entries(stored[TAB_ORIGINS_KEY] ?? {})) {
+        const tabId = Number(rawTabId);
+        try {
+          const origin = new URL(String(rawOrigin)).origin;
+          if (Number.isInteger(tabId) && tabId >= 0 && /^https?:/i.test(origin)) lastTabOrigins.set(tabId, origin);
+        } catch {}
+      }
+    }).catch(() => {});
+  }
+  return tabOriginsHydration;
+}
+
+function persistTabOrigins() {
+  const entries = [...lastTabOrigins.entries()].slice(-500);
+  return chrome.storage.session.set({ [TAB_ORIGINS_KEY]: Object.fromEntries(entries) }).catch(() => {});
+}
+
+function scheduleTabOriginsPersist() {
+  if (tabOriginsPersistTimer) return;
+  tabOriginsPersistTimer = setTimeout(() => {
+    tabOriginsPersistTimer = null;
+    void persistTabOrigins();
+  }, TAB_ORIGINS_FLUSH_DELAY_MS);
+}
+
+async function rememberTabOrigin(tabId, value) {
+  if (!Number.isInteger(tabId) || tabId < 0) return;
+  await ensureTabOriginsHydrated();
+  try {
+    const origin = new URL(String(value)).origin;
+    if (!/^https?:/i.test(origin)) return;
+    lastTabOrigins.set(tabId, origin);
+    scheduleTabOriginsPersist();
+  } catch {}
+}
+
+function ensurePrivacySessionsHydrated() {
+  if (!privacySessionsHydration) {
+    privacySessionsHydration = chrome.storage.session
+      .get({ [PRIVACY_SESSIONS_KEY]: { version: 1, sessions: {} } })
+      .then((stored) => {
+        privacySessions.clear();
+        for (const [tabId, session] of normalizePrivacySessions(stored[PRIVACY_SESSIONS_KEY])) {
+          privacySessions.set(tabId, session);
+        }
+      })
+      .catch(() => {});
+  }
+  return privacySessionsHydration;
+}
+
+function persistPrivacySessions() {
+  const payload = serializePrivacySessions(privacySessions);
+  privacySessionsWrite = privacySessionsWrite
+    .then(() => chrome.storage.session.set({ [PRIVACY_SESSIONS_KEY]: payload }))
+    .catch(() => {});
+  return privacySessionsWrite;
+}
+
+function schedulePrivacySessionsPersist() {
+  if (privacySessionsPersistTimer) return;
+  privacySessionsPersistTimer = setTimeout(() => {
+    privacySessionsPersistTimer = null;
+    void persistPrivacySessions();
+  }, PRIVACY_SESSION_FLUSH_DELAY_MS);
+}
+
 function privacySession(tabId, site, { reset = false } = {}) {
   if (!Number.isInteger(tabId) || tabId < 0 || !site) return null;
   const current = privacySessions.get(tabId);
   if (!reset && current?.site === site) return current;
   const next = {
-    site,
-    startedAt: Date.now(),
-    thirdPartyRequests: 0,
+      site,
+      startedAt: Date.now(),
+      totalRequests: 0,
+      allowedRequests: 0,
+      unknownRequests: 0,
+      thirdPartyRequests: 0,
     blockedRequests: 0,
     thirdPartyDomains: new Map(),
     blockedDomains: new Map()
@@ -419,18 +558,25 @@ function privacySession(tabId, site, { reset = false } = {}) {
   return next;
 }
 
-function recordPrivacyRequest(details) {
+async function recordPrivacyRequest(details) {
   if (!Number.isInteger(details.tabId) || details.tabId < 0 || !/^https?:/i.test(details.url ?? "")) return;
+  await ensurePrivacySessionsHydrated();
   const resourceDomain = registrableDomainFromURL(details.url);
   if (!resourceDomain) return;
   if (details.type === "main_frame") {
     privacySession(details.tabId, resourceDomain, { reset: true });
+    schedulePrivacySessionsPersist();
     return;
   }
   const sourceURL = details.initiator || details.documentUrl || "";
   const site = registrableDomainFromURL(sourceURL) || privacySessions.get(details.tabId)?.site;
   const session = privacySession(details.tabId, site);
-  if (!session || resourceDomain === session.site) return;
+  if (!session) return;
+  session.totalRequests += 1;
+  if (resourceDomain === session.site) {
+    schedulePrivacySessionsPersist();
+    return;
+  }
   session.thirdPartyRequests += 1;
   session.thirdPartyDomains.set(
     resourceDomain,
@@ -442,10 +588,12 @@ function recordPrivacyRequest(details) {
       .slice(0, session.thirdPartyDomains.size - 80);
     for (const [domain] of leastUsed) session.thirdPartyDomains.delete(domain);
   }
+  schedulePrivacySessionsPersist();
 }
 
-function recordPrivacyBlock(tabId, pageURL, resourceDomain) {
+async function recordPrivacyBlock(tabId, pageURL, resourceDomain) {
   if (!Number.isInteger(tabId) || tabId < 0) return;
+  await ensurePrivacySessionsHydrated();
   const site = registrableDomainFromURL(pageURL) || privacySessions.get(tabId)?.site;
   const session = privacySession(tabId, site);
   if (session) {
@@ -462,17 +610,32 @@ function recordPrivacyBlock(tabId, pageURL, resourceDomain) {
         for (const [domain] of leastUsed) session.blockedDomains.delete(domain);
       }
     }
+    schedulePrivacySessionsPersist();
   }
 }
 
-function normalizedContinueWatching(input) {
+async function recordPrivacyOutcome(details, outcome) {
+  if (!Number.isInteger(details.tabId) || details.tabId < 0 || details.type === "main_frame") return;
+  await ensurePrivacySessionsHydrated();
+  const site = registrableDomainFromURL(details.initiator || details.documentUrl || "")
+    || privacySessions.get(details.tabId)?.site;
+  const session = privacySession(details.tabId, site);
+  if (!session) return;
+  if (outcome === "allowed") session.allowedRequests += 1;
+  if (outcome === "unknown") session.unknownRequests += 1;
+  enqueueBlockingEvent({ type: "observed", site, count: 1 });
+  schedulePrivacySessionsPersist();
+}
+
+function normalizedContinueWatching(input, retentionDays = 90) {
   const now = Date.now();
+  const ttlMS = Math.min(90, Math.max(7, Number(retentionDays) || 90)) * 24 * 60 * 60 * 1_000;
   const entries = Object.entries(input?.entries ?? {}).flatMap(([identity, entry]) => {
     const updatedAt = Number(entry?.updatedAt);
     const position = Number(entry?.position);
     const duration = Number(entry?.duration);
     if (!/^[a-f0-9]{64}$/.test(identity) || !Number.isFinite(updatedAt)
-        || now - updatedAt > CONTINUE_WATCHING_TTL_MS
+        || now - updatedAt > ttlMS
         || !Number.isFinite(position) || position <= 0
         || !Number.isFinite(duration) || duration < 120) return [];
     const title = String(entry?.title ?? "").replace(/\s+/g, " ").trim().slice(0, 160);
@@ -496,7 +659,9 @@ function normalizedContinueWatching(input) {
         url = parsed.href.slice(0, 2_048);
       }
     } catch {}
-    return [[identity, { position, duration, updatedAt, title, episode, site, mediaType, url }]];
+    const removedParameters = Array.isArray(entry?.removedParameters)
+      ? entry.removedParameters.map(String).filter(Boolean).slice(0, 30) : [];
+    return [[identity, { position, duration, updatedAt, title, episode, site, mediaType, url, removedParameters }]];
   }).sort((left, right) => right[1].updatedAt - left[1].updatedAt).slice(0, CONTINUE_WATCHING_LIMIT);
   return { version: 2, entries: Object.fromEntries(entries) };
 }
@@ -505,13 +670,15 @@ async function getContinueWatchingPosition(identity) {
   if (!/^[a-f0-9]{64}$/.test(String(identity ?? ""))) return {};
   await continueWatchingWrite;
   const stored = await chrome.storage.local.get({ [CONTINUE_WATCHING_KEY]: { version: 2, entries: {} } });
-  return normalizedContinueWatching(stored[CONTINUE_WATCHING_KEY]).entries[identity] ?? {};
+  const preferences = await featurePreferencesStorage();
+  return normalizedContinueWatching(stored[CONTINUE_WATCHING_KEY], preferences.continueWatchingRetentionDays).entries[identity] ?? {};
 }
 
 async function getContinueWatchingList() {
   await continueWatchingWrite;
   const stored = await chrome.storage.local.get({ [CONTINUE_WATCHING_KEY]: { version: 2, entries: {} } });
-  return Object.entries(normalizedContinueWatching(stored[CONTINUE_WATCHING_KEY]).entries)
+  const preferences = await featurePreferencesStorage();
+  return Object.entries(normalizedContinueWatching(stored[CONTINUE_WATCHING_KEY], preferences.continueWatchingRetentionDays).entries)
     .map(([identity, entry]) => ({ identity, ...entry }))
     .filter((entry) => entry.url && entry.site);
 }
@@ -521,13 +688,15 @@ function setContinueWatchingPosition({
 }) {
   if (!/^[a-f0-9]{64}$/.test(String(identity ?? ""))) return Promise.resolve({ ok: false });
   continueWatchingWrite = continueWatchingWrite.then(async () => {
+    const preferences = await featurePreferencesStorage();
     const stored = await chrome.storage.local.get({ [CONTINUE_WATCHING_KEY]: { version: 2, entries: {} } });
-    const normalized = normalizedContinueWatching(stored[CONTINUE_WATCHING_KEY]);
+    const normalized = normalizedContinueWatching(stored[CONTINUE_WATCHING_KEY], preferences.continueWatchingRetentionDays);
     if (completed || !Number.isFinite(position) || position < 10 || position >= duration - 20) {
       delete normalized.entries[identity];
     } else if (Number.isFinite(duration) && duration >= 120) {
       let site = "";
       try { site = new URL(pageURL).hostname.replace(/^www\./, ""); } catch {}
+      const sanitizedURL = sanitizeStoredMediaURL(pageURL);
       normalized.entries[identity] = {
         position: Math.round(position * 10) / 10,
         duration: Math.round(duration * 10) / 10,
@@ -536,15 +705,28 @@ function setContinueWatchingPosition({
         episode,
         mediaType,
         site,
-        url: pageURL
+        url: sanitizedURL.url,
+        removedParameters: sanitizedURL.removed
       };
     }
-    await chrome.storage.local.set({ [CONTINUE_WATCHING_KEY]: normalizedContinueWatching(normalized) });
+    await chrome.storage.local.set({ [CONTINUE_WATCHING_KEY]: normalizedContinueWatching(normalized, preferences.continueWatchingRetentionDays) });
   }).catch(() => {});
   return continueWatchingWrite.then(() => ({ ok: true }));
 }
 
+function removeContinueWatchingEntry(identity) {
+  continueWatchingWrite = continueWatchingWrite.then(async () => {
+    const preferences = await featurePreferencesStorage();
+    const stored = await chrome.storage.local.get({ [CONTINUE_WATCHING_KEY]: { version: 2, entries: {} } });
+    const normalized = normalizedContinueWatching(stored[CONTINUE_WATCHING_KEY], preferences.continueWatchingRetentionDays);
+    delete normalized.entries[String(identity ?? "")];
+    await chrome.storage.local.set({ [CONTINUE_WATCHING_KEY]: normalized });
+  });
+  return continueWatchingWrite.then(() => ({ ok: true }));
+}
+
 async function sitePrivacyReceipt(tabId, url) {
+  await ensurePrivacySessionsHydrated();
   const site = registrableDomainFromURL(url);
   const session = privacySessions.get(tabId);
   const relevantSession = session?.site === site ? session : null;
@@ -563,6 +745,9 @@ async function sitePrivacyReceipt(tabId, url) {
   return {
     domain: site,
     startedAt: relevantSession?.startedAt ?? Date.now(),
+    totalRequests: relevantSession?.totalRequests ?? 0,
+    allowedRequests: relevantSession?.allowedRequests ?? 0,
+    unknownRequests: relevantSession?.unknownRequests ?? 0,
     thirdPartyRequests: relevantSession?.thirdPartyRequests ?? 0,
     blockedRequests: relevantSession?.blockedRequests ?? 0,
     blockedToday,
@@ -577,6 +762,13 @@ async function sitePrivacyReceipt(tabId, url) {
     firstPartyCookies: Number(signals?.firstPartyCookies) || 0,
     localStorageKeys: Number(signals?.localStorageKeys) || 0,
     sessionStorageKeys: Number(signals?.sessionStorageKeys) || 0,
+    localStorageBytes: Number(signals?.localStorageBytes) || 0,
+    sessionStorageBytes: Number(signals?.sessionStorageBytes) || 0,
+    indexedDBCount: Number(signals?.indexedDBCount) || 0,
+    cacheStorageCount: Number(signals?.cacheStorageCount) || 0,
+    serviceWorkerCount: Number(signals?.serviceWorkerCount) || 0,
+    storageUsageBytes: Number(signals?.storageUsageBytes) || 0,
+    storageQuotaBytes: Number(signals?.storageQuotaBytes) || 0,
     notificationPermission: String(signals?.notificationPermission ?? "unknown"),
     secureContext: signals?.secureContext === true,
     protectionActive: protection?.enabled !== false && !protection?.siteAllowlisted && !protection?.sitePausedUntil,
@@ -584,7 +776,40 @@ async function sitePrivacyReceipt(tabId, url) {
   };
 }
 
+function classifyBlockingEvent(resource, type = "network") {
+  const value = String(resource ?? "").toLowerCase();
+  if (type === "sponsor" || type === "video") return { source: "video", category: "video" };
+  if (/coinhive|cryptonight|miner|monero|webmine/.test(value)) return { source: "cryptomining", category: "miners" };
+  if (/analytics|telemetry|metrics|sentry|newrelic/.test(value)) return { source: "easyprivacy", category: "telemetry" };
+  if (/doubleclick|adservice|adserver|banner|promo/.test(value)) return { source: "easylist", category: "ads" };
+  if (/track|pixel|beacon|facebook|segment|amplitude/.test(value)) return { source: "easyprivacy", category: "trackers" };
+  if (type === "link") return { source: "link-safety", category: "annoyances" };
+  if (/\.ru$|\.su$|\.рф$/u.test(value)) return { source: "ruadlist", category: "ads" };
+  return { source: "easylist", category: "ads" };
+}
+
+function recordBlockingJournal(event) {
+  blockingJournalWrite = blockingJournalWrite.then(async () => {
+    const preferences = await featurePreferencesStorage();
+    if (!preferences.blockingJournalEnabled || event.type === "observed") return;
+    const stored = await chrome.storage.local.get({ [BLOCKING_JOURNAL_KEY]: [] });
+    const journal = Array.isArray(stored[BLOCKING_JOURNAL_KEY]) ? stored[BLOCKING_JOURNAL_KEY] : [];
+    const entry = {
+      createdAt: new Date().toISOString(),
+      type: String(event.type ?? "network"),
+      site: String(event.site ?? "").slice(0, 253),
+      resource: String(event.resource ?? "").slice(0, 253),
+      source: String(event.source ?? "unknown"),
+      category: String(event.category ?? "unknown")
+    };
+    await chrome.storage.local.set({ [BLOCKING_JOURNAL_KEY]: [entry, ...journal].slice(0, 500) });
+  }).catch(() => {});
+}
+
 function enqueueBlockingEvent(event) {
+  const classification = classifyBlockingEvent(event.resource, event.type);
+  event = { ...classification, ...event };
+  recordBlockingJournal(event);
   pendingBlockingEvents.push(event);
   if (pendingBlockingEvents.length >= BLOCKING_STATISTICS_BATCH_SIZE) {
     void flushBlockingEvents();
@@ -625,8 +850,10 @@ async function recordObservedNetworkBlock(details) {
     }
   }
   if (!site) return;
-  recordPrivacyBlock(details.tabId, details.initiator || details.documentUrl || "", resource);
-  enqueueBlockingEvent({ type: "network", site, resource });
+  const settings = await protectionSettingsStorage();
+  const customDomain = (settings.customBlockedDomains ?? []).some((domain) => resource === domain || resource.endsWith(`.${domain}`));
+  void recordPrivacyBlock(details.tabId, details.initiator || details.documentUrl || "", resource);
+  enqueueBlockingEvent({ type: "network", site, resource, ...(customDomain ? { source: "custom", category: "custom" } : {}) });
 }
 
 function validYouTubeVideoID(value) {
@@ -661,9 +888,9 @@ function sanitizeSponsorSegments(payload, videoID) {
 
 async function getSponsorSegments(videoID) {
   const normalizedID = validYouTubeVideoID(videoID);
-  if (!normalizedID) return [];
+  if (!normalizedID) return { segments: [], status: "unavailable" };
   const settings = await protectionSettingsStorage();
-  if (!settings.sponsorSegmentSkippingEnabled) return [];
+  if (!settings.sponsorSegmentSkippingEnabled) return { segments: [], status: "disabled" };
   const now = Date.now();
   const stored = await chrome.storage.local.get({ [SPONSOR_CACHE_KEY]: {} });
   const cache = stored[SPONSOR_CACHE_KEY] && typeof stored[SPONSOR_CACHE_KEY] === "object"
@@ -671,7 +898,8 @@ async function getSponsorSegments(videoID) {
     : {};
   if (Array.isArray(cache[normalizedID]?.segments)
       && now - Date.parse(cache[normalizedID].updatedAt ?? "") < SPONSOR_CACHE_TTL_MS) {
-    return cache[normalizedID].segments;
+    const segments = cache[normalizedID].segments;
+    return { segments, status: segments.length ? "available" : "none" };
   }
 
   const prefix = await sponsorHashPrefix(normalizedID);
@@ -699,7 +927,7 @@ async function getSponsorSegments(videoID) {
       .slice(0, SPONSOR_CACHE_LIMIT)
   );
   await chrome.storage.local.set({ [SPONSOR_CACHE_KEY]: compactCache });
-  return segments;
+  return { segments, status: segments.length ? "available" : "none" };
 }
 
 function senderIsYouTube(sender) {
@@ -1093,6 +1321,25 @@ async function setSiteTemporarilyPaused(domain, durationMinutes) {
   return temporarySitePauses[normalized] ?? null;
 }
 
+async function bypassSiteOnce(domain) {
+  const normalized = normalizeSiteDomain(domain);
+  if (!normalized) throw new Error("The current site could not be identified");
+  await setSiteTemporarilyPaused(normalized, 2);
+  const stored = await chrome.storage.local.get({ [ONE_RELOAD_BYPASS_KEY]: [] });
+  const sites = [...new Set([...(Array.isArray(stored[ONE_RELOAD_BYPASS_KEY]) ? stored[ONE_RELOAD_BYPASS_KEY] : []), normalized])].slice(-100);
+  await chrome.storage.local.set({ [ONE_RELOAD_BYPASS_KEY]: sites });
+  return { ok: true, domain: normalized };
+}
+
+async function finishOneReloadBypass(url) {
+  const domain = normalizeSiteDomain(url);
+  const stored = await chrome.storage.local.get({ [ONE_RELOAD_BYPASS_KEY]: [] });
+  const sites = Array.isArray(stored[ONE_RELOAD_BYPASS_KEY]) ? stored[ONE_RELOAD_BYPASS_KEY] : [];
+  if (!domain || !sites.includes(domain)) return;
+  await chrome.storage.local.set({ [ONE_RELOAD_BYPASS_KEY]: sites.filter((site) => site !== domain) });
+  await setSiteTemporarilyPaused(domain, 0);
+}
+
 async function contentBlockingState(url) {
   const extensionEnabled = await extensionEnabledStorage();
   const state = await blockerStorage();
@@ -1269,6 +1516,93 @@ async function downloadCookies(url, all, format, saveAs) {
   return { ok: true, downloadId, count: payload.cookies.length, filename: payload.filename };
 }
 
+const SITE_RESET_DEFINITIONS = {
+  cookies: { cookies: true },
+  storage: { fileSystems: true, indexedDB: true, localStorage: true, webSQL: true },
+  cache: { cache: true, cacheStorage: true },
+  serviceWorkers: { serviceWorkers: true }
+};
+
+function normalizeSiteResetRequest(origin, categories) {
+  const url = new URL(String(origin ?? ""));
+  if (!/^https?:$/.test(url.protocol)) throw new Error("Site origin is unavailable");
+  const requested = [...new Set(Array.isArray(categories) ? categories : [])]
+    .filter((category) => SITE_RESET_DEFINITIONS[category]);
+  if (!requested.length) throw new Error("No site-data categories selected");
+  return { origin: url.origin, categories: requested };
+}
+
+async function resetOriginData(origin, categories) {
+  const request = normalizeSiteResetRequest(origin, categories);
+  const results = [];
+  for (const category of request.categories) {
+    try {
+      await chrome.browsingData.remove({ origins: [request.origin] }, SITE_RESET_DEFINITIONS[category]);
+      results.push({ category, ok: true });
+    } catch (error) {
+      results.push({ category, ok: false, error: error?.message ?? "Removal failed" });
+    }
+  }
+  return { ok: results.every((result) => result.ok), origin: request.origin, results };
+}
+
+function sanitizePendingSiteResets(input) {
+  const now = Date.now();
+  return (Array.isArray(input) ? input : []).flatMap((entry) => {
+    try {
+      const request = normalizeSiteResetRequest(entry?.origin, entry?.categories);
+      const tabId = Number(entry?.tabId);
+      const delayMinutes = Math.min(24 * 60, Math.max(0, Number(entry?.delayMinutes) || 0));
+      if (!Number.isInteger(tabId) || tabId < 0 || now - Number(entry?.createdAt) > 7 * 86_400_000) return [];
+      return [{
+        id: String(entry?.id || `${tabId}-${Number(entry?.createdAt) || now}`),
+        tabId,
+        origin: request.origin,
+        categories: request.categories,
+        delayMinutes,
+        createdAt: Number(entry?.createdAt) || now,
+        runAt: Number(entry?.runAt) || 0,
+        state: entry?.state === "scheduled" ? "scheduled" : "waiting-close"
+      }];
+    } catch {
+      return [];
+    }
+  }).slice(-100);
+}
+
+async function pendingSiteResets() {
+  const stored = await chrome.storage.local.get({ [PENDING_SITE_RESETS_KEY]: [] });
+  return sanitizePendingSiteResets(stored[PENDING_SITE_RESETS_KEY]);
+}
+
+async function handlePendingSiteResetsForClosedTab(tabId) {
+  const pending = await pendingSiteResets();
+  const matching = pending.filter((entry) => entry.tabId === tabId && entry.state === "waiting-close");
+  if (!matching.length) return;
+  const remaining = pending.filter((entry) => !matching.includes(entry));
+  for (const entry of matching) {
+    if (entry.delayMinutes <= 0) {
+      await resetOriginData(entry.origin, entry.categories).catch(() => {});
+      continue;
+    }
+    entry.state = "scheduled";
+    entry.runAt = Date.now() + entry.delayMinutes * 60_000;
+    remaining.push(entry);
+    await chrome.alarms.create(`${SITE_RESET_ALARM_PREFIX}${entry.id}`, { when: entry.runAt });
+  }
+  await chrome.storage.local.set({ [PENDING_SITE_RESETS_KEY]: remaining });
+}
+
+async function runScheduledSiteReset(id) {
+  const pending = await pendingSiteResets();
+  const entry = pending.find((candidate) => candidate.id === id && candidate.state === "scheduled");
+  if (!entry) return;
+  await resetOriginData(entry.origin, entry.categories).catch(() => {});
+  await chrome.storage.local.set({
+    [PENDING_SITE_RESETS_KEY]: pending.filter((candidate) => candidate.id !== id)
+  });
+}
+
 function unavailableMetrics(tab) {
   return {
     sampleDurationSeconds: 0,
@@ -1279,21 +1613,41 @@ function unavailableMetrics(tab) {
     transferBytes: 0,
     layoutShiftScore: 0,
     backgroundEventCount: 0,
+    backgroundDurationSeconds: 0,
     mediaElementCount: 0,
     visibility: tab.active ? "visible" : "unavailable"
   };
 }
 
-async function readTab(tab, ecoTabs) {
+async function readTab(tab, ecoTabs, ecoRestoreStatus = {}) {
   let metrics = unavailableMetrics(tab);
   try {
-    const response = await chrome.tabs.sendMessage(tab.id, { kind: "getMetrics" });
+    const response = await withTimeout(
+      chrome.tabs.sendMessage(tab.id, { kind: "getMetrics" }),
+      1_500,
+      `Metrics for tab ${tab.id}`
+    );
     if (response?.available) metrics = response;
   } catch {
     // Restricted, discarded, and pre-installation tabs may not have a content script.
   }
+  try {
+    const frames = await chrome.webNavigation.getAllFrames({ tabId: tab.id });
+    const childMetrics = await Promise.all((frames ?? []).filter((frame) => frame.frameId !== 0).map((frame) =>
+      withTimeout(chrome.tabs.sendMessage(tab.id, { kind: "getFrameMetrics" }, { frameId: frame.frameId }), 500, "Frame metrics").catch(() => null)
+    ));
+    for (const frame of childMetrics.filter((entry) => entry?.available)) {
+      for (const key of ["longFrameCount", "blockingDurationMS", "forcedStyleAndLayoutDurationMS", "resourceCount", "transferBytes", "layoutShiftScore", "backgroundEventCount"]) {
+        metrics[key] = (Number(metrics[key]) || 0) + (Number(frame[key]) || 0);
+      }
+      metrics.sampleDurationSeconds = Math.max(Number(metrics.sampleDurationSeconds) || 0, Number(frame.sampleDurationSeconds) || 0);
+    }
+  } catch {
+    // Restricted child frames remain optional evidence.
+  }
 
   const assessment = assessTab(metrics, tab);
+  const recentAssessment = metrics.recent ? assessTab({ ...metrics, ...metrics.recent }, tab) : assessment;
   return {
     tabId: tab.id,
     title: tab.title ?? "",
@@ -1310,12 +1664,31 @@ async function readTab(tab, ecoTabs) {
       transferBytes: metrics.transferBytes,
       layoutShiftScore: metrics.layoutShiftScore,
       backgroundEventCount: metrics.backgroundEventCount,
+      backgroundDurationSeconds: metrics.backgroundDurationSeconds,
       mediaElementCount: metrics.mediaElementCount
     },
+    recentMetrics: metrics.recent ?? null,
+    recentAssessment,
     ...assessment,
     measuredAt: new Date().toISOString(),
-    ecoModeEnabled: Boolean(ecoTabs[String(tab.id)])
+    ecoModeEnabled: Boolean(ecoTabs[String(tab.id)]),
+    ecoModeLevel: ecoTabs[String(tab.id)]?.level ?? (ecoTabs[String(tab.id)] ? "limit" : null),
+    ecoRestoreStatus: ecoRestoreStatus[String(tab.id)] ?? null,
+    sponsorBlockStatus: sponsorStatusByTab.get(tab.id) ?? null
   };
+}
+
+async function mapWithConcurrency(items, limit, callback) {
+  const result = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const index = next++;
+      result[index] = await callback(items[index]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return result;
 }
 
 async function ecoStorage() {
@@ -1324,6 +1697,7 @@ async function ecoStorage() {
     ecoOriginalMuted: {},
     ecoRuleIds: {},
     ecoCommandVersions: {},
+    ecoRestoreStatus: {},
     nextEcoRuleId: 100_000
   });
 }
@@ -1352,9 +1726,11 @@ async function ensureEcoRule(tabId, state) {
   });
 }
 
-async function applyEcoMode(tabId, enabled, requestedAt = new Date().toISOString()) {
+async function applyEcoMode(tabId, enabled, requestedAt = new Date().toISOString(), options = {}) {
   const key = String(tabId);
   const state = await ecoStorage();
+  const level = ["pause", "limit", "deep"].includes(options.level) ? options.level : "limit";
+  const durationMinutes = Number(options.durationMinutes) === 15 ? 15 : 0;
   let tab;
   try {
     tab = await chrome.tabs.get(tabId);
@@ -1375,37 +1751,42 @@ async function applyEcoMode(tabId, enabled, requestedAt = new Date().toISOString
     if (!(key in state.ecoOriginalMuted)) {
       state.ecoOriginalMuted[key] = Boolean(tab.mutedInfo?.muted);
     }
-    state.ecoTabs[key] = true;
+    state.ecoTabs[key] = { level, enabledAt: Date.now(), expiresAt: durationMinutes ? Date.now() + durationMinutes * 60_000 : 0 };
+    state.ecoRestoreStatus[key] = "active";
     state.ecoCommandVersions[key] = requestedAt;
-    await ensureEcoRule(tabId, state);
-    await chrome.tabs.update(tabId, { muted: true });
+    if (level !== "pause") await ensureEcoRule(tabId, state);
+    await chrome.tabs.update(tabId, { muted: level !== "pause" });
     try {
-      await chrome.tabs.sendMessage(tabId, { kind: "setEcoMode", enabled: true });
+      await chrome.tabs.sendMessage(tabId, { kind: "setEcoMode", enabled: true, level });
     } catch {
       // A discarded tab applies Eco Mode when its content script starts again.
     }
-    if (!tab.active) {
+    if (level === "deep" && !tab.active) {
       try {
         await chrome.tabs.discard(tabId);
       } catch {
         // Chrome may reject discard for a tab transitioning between states.
       }
     }
+    if (durationMinutes) await chrome.alarms.create(`eco-expire:${tabId}`, { when: Date.now() + durationMinutes * 60_000 });
   } else {
     const ruleId = state.ecoRuleIds[key];
     if (ruleId) {
       await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [ruleId] });
     }
     try {
-      await chrome.tabs.sendMessage(tabId, { kind: "setEcoMode", enabled: false });
+      await chrome.tabs.sendMessage(tabId, { kind: "setEcoMode", enabled: false, level: state.ecoTabs[key]?.level ?? "limit" });
     } catch {
       // Restoring a discarded tab completes when Chrome reloads it.
     }
     await chrome.tabs.update(tabId, { muted: Boolean(state.ecoOriginalMuted[key]) });
+    await chrome.alarms.clear(`eco-expire:${tabId}`);
     delete state.ecoTabs[key];
     delete state.ecoOriginalMuted[key];
     delete state.ecoRuleIds[key];
     state.ecoCommandVersions[key] = requestedAt;
+    state.ecoRestoreStatus[key] = tab.discarded ? "restoring" : "restored";
+    if (tab.discarded) await chrome.tabs.reload(tabId).catch(() => {});
   }
 
   await chrome.storage.local.set(state);
@@ -1417,14 +1798,17 @@ export async function collectSnapshot() {
   const state = await chrome.storage.local.get({
     monitoringEnabled: true,
     monitoringUpdatedAt: now,
-    ecoTabs: {}
+    ecoTabs: {},
+    ecoRestoreStatus: {}
   });
   const blocker = await blockerStorage();
   const protectionSettings = await protectionSettingsStorage();
   const allTabs = await chrome.tabs.query({});
-  const supportedTabs = allTabs.filter((tab) => /^https?:\/\//.test(tab.url || tab.pendingUrl || ""));
+  const supportedTabs = allTabs
+    .filter((tab) => /^https?:\/\//.test(tab.url || tab.pendingUrl || ""))
+    .sort((left, right) => Number(right.active) - Number(left.active) || Number(right.audible) - Number(left.audible) || (right.lastAccessed ?? 0) - (left.lastAccessed ?? 0));
   const reports = extensionEnabled && state.monitoringEnabled
-    ? await Promise.all(supportedTabs.map((tab) => readTab(tab, state.ecoTabs)))
+    ? await mapWithConcurrency(supportedTabs, 4, (tab) => readTab(tab, state.ecoTabs, state.ecoRestoreStatus))
     : [];
   reports.sort((left, right) => right.score - left.score);
 
@@ -1505,7 +1889,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   await disableActionCount();
   await applyProtectionConfiguration(sanitizedInitialProtectionSettings);
   await notifyHistoryPrivacyDomainsForAllTabs();
-  await chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
+  await chrome.alarms.create(ALARM_NAME, { periodInMinutes: 15 });
   await setupContextMenus();
   await collectSnapshot();
 });
@@ -1515,27 +1899,40 @@ chrome.runtime.onStartup.addListener(async () => {
   await disableActionCount();
   await applyProtectionConfiguration(await protectionSettingsStorage());
   await notifyHistoryPrivacyDomainsForAllTabs();
-  await chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
+  await chrome.alarms.create(ALARM_NAME, { periodInMinutes: 15 });
   await setupContextMenus();
   await collectSnapshot();
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name.startsWith("eco-expire:")) {
+    applyEcoMode(Number(alarm.name.slice("eco-expire:".length)), false).catch(() => {});
+    return;
+  }
+  if (alarm.name.startsWith(SITE_RESET_ALARM_PREFIX)) {
+    runScheduledSiteReset(alarm.name.slice(SITE_RESET_ALARM_PREFIX.length)).catch(() => {});
+    return;
+  }
   if (alarm.name === ALARM_NAME) {
     cleanupTemporaryPauses()
       .then(() => protectionSettingsStorage())
       .then((settings) => refreshCustomFilterSubscriptions(settings))
       .then(() => syncCosmeticFilteringForAllTabs())
-      .then(() => collectSnapshot())
       .catch(() => {});
   }
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
+  await ensurePrivacySessionsHydrated();
+  await ensureTabOriginsHydrated();
   privacySessions.delete(tabId);
+  sponsorStatusByTab.delete(tabId);
+  await persistPrivacySessions();
   const closedOrigin = lastTabOrigins.get(tabId);
   lastTabOrigins.delete(tabId);
+  await persistTabOrigins();
   redirectRequests.delete(tabId);
+  await handlePendingSiteResetsForClosedTab(tabId);
   if (closedOrigin) {
     const site = registrableSite(closedOrigin);
     const stored = await chrome.storage.local.get({ [SITE_DATA_CLEANUP_KEY]: [] });
@@ -1614,19 +2011,26 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     }
   }
   if (changeInfo.status === "complete") {
+    const state = await ecoStorage();
+    const key = String(tabId);
+    if (state.ecoRestoreStatus[key] === "restoring") {
+      state.ecoRestoreStatus[key] = "restored";
+      await chrome.storage.local.set({ ecoRestoreStatus: state.ecoRestoreStatus });
+    }
     await syncCosmeticFilteringForTab(tabId, tab.url);
     await notifyHistoryPrivacyDomainsForTab(tabId).catch(() => {});
   }
 });
 
 chrome.webRequest.onErrorOccurred.addListener((details) => {
+  if (details.error !== "net::ERR_BLOCKED_BY_CLIENT") void recordPrivacyOutcome(details, "unknown");
   void recordObservedNetworkBlock(details);
 }, { urls: ["<all_urls>"] });
 
 chrome.webRequest.onBeforeRequest.addListener((details) => {
-  recordPrivacyRequest(details);
+  if (details.type === "main_frame" && details.tabId >= 0) void rememberTabOrigin(details.tabId, details.url);
+  void recordPrivacyRequest(details);
   if (details.type === "main_frame" && details.tabId >= 0 && /^https?:/i.test(details.url)) {
-    try { lastTabOrigins.set(details.tabId, new URL(details.url).origin); } catch {}
     const current = redirectRequests.get(details.tabId);
     const steps = current?.requestId === details.requestId ? current.steps : [];
     redirectRequests.set(details.tabId, {
@@ -1636,6 +2040,39 @@ chrome.webRequest.onBeforeRequest.addListener((details) => {
     });
   }
 }, { urls: ["<all_urls>"] });
+
+function recordCookieChange(change) {
+  const cookie = change.cookie;
+  if (!cookie?.domain || !cookie?.name) return;
+  const entry = {
+    at: Date.now(),
+    domain: String(cookie.domain).replace(/^\./, "").toLowerCase().slice(0, 253),
+    name: String(cookie.name).slice(0, 256),
+    removed: change.removed === true,
+    cause: String(change.cause ?? "explicit").slice(0, 40)
+  };
+  cookieChangeWrite = cookieChangeWrite.then(async () => {
+    const stored = await chrome.storage.session.get({ [COOKIE_CHANGES_KEY]: [] });
+    const cutoff = Date.now() - 12 * 60 * 60 * 1_000;
+    const next = [entry, ...(Array.isArray(stored[COOKIE_CHANGES_KEY]) ? stored[COOKIE_CHANGES_KEY] : [])]
+      .filter((item) => Number(item?.at) >= cutoff && item?.domain && item?.name)
+      .slice(0, 200);
+    await chrome.storage.session.set({ [COOKIE_CHANGES_KEY]: next });
+  }).catch(() => {});
+}
+
+let cookieChangeListenerRegistered = false;
+function registerCookieChangeListener() {
+  if (cookieChangeListenerRegistered || !chrome.cookies?.onChanged) return false;
+  chrome.cookies.onChanged.addListener(recordCookieChange);
+  cookieChangeListenerRegistered = true;
+  return true;
+}
+
+registerCookieChangeListener();
+chrome.permissions.onAdded.addListener((permissions) => {
+  if (permissions.permissions?.includes("cookies")) registerCookieChangeListener();
+});
 
 chrome.webRequest.onBeforeRedirect.addListener((details) => {
   if (details.type !== "main_frame" || details.tabId < 0) return;
@@ -1649,7 +2086,12 @@ chrome.webRequest.onBeforeRedirect.addListener((details) => {
 }, { urls: ["<all_urls>"] });
 
 chrome.webRequest.onCompleted.addListener((details) => {
+  if (details.type !== "main_frame") {
+    void recordPrivacyOutcome(details, "allowed");
+    return;
+  }
   if (details.type !== "main_frame" || details.tabId < 0) return;
+  setTimeout(() => finishOneReloadBypass(details.url).catch(() => {}), 1_500);
   const current = redirectRequests.get(details.tabId);
   if (!current || current.requestId !== details.requestId) return;
   current.steps = appendRedirectStep(current.steps, details.url);
@@ -1705,6 +2147,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(() => sendResponse({ entries: [] }));
     return true;
   }
+  if (message?.kind === "removeContinueWatchingEntry") {
+    removeContinueWatchingEntry(message.identity).then(sendResponse).catch(() => sendResponse({ ok: false }));
+    return true;
+  }
   if (message?.kind === "setContinueWatchingPosition") {
     setContinueWatchingPosition({
       identity: String(message.identity ?? ""),
@@ -1725,10 +2171,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.kind === "recordSiteActivity" && sender?.tab && /^https?:/i.test(sender.url ?? "")) {
-    const domain = hostnameFromURL(sender.url);
+    const domain = registrableDomainFromURL(sender.url);
     activityStatisticsWrite = activityStatisticsWrite.then(async () => {
+      const preferences = await featurePreferencesStorage();
+      if (siteIsExcluded(domain, preferences.activityExcludedSites)) return;
       const stored = await chrome.storage.local.get({ [ACTIVITY_STATISTICS_KEY]: { version: 1, days: {} } });
-      const updated = recordActivitySample(stored[ACTIVITY_STATISTICS_KEY], message, domain);
+      const updated = recordActivitySample(stored[ACTIVITY_STATISTICS_KEY], message, domain, new Date(), {
+        retentionDays: preferences.activityRetentionDays
+      });
       await chrome.storage.local.set({ [ACTIVITY_STATISTICS_KEY]: updated });
     });
     activityStatisticsWrite.then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false }));
@@ -1736,14 +2186,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.kind === "getSiteActivityStatistics") {
     activityStatisticsWrite.then(async () => {
+      const preferences = await featurePreferencesStorage();
       const stored = await chrome.storage.local.get({ [ACTIVITY_STATISTICS_KEY]: { version: 1, days: {} } });
-      sendResponse(summarizeActivityStatistics(stored[ACTIVITY_STATISTICS_KEY], message.period));
+      sendResponse(summarizeActivityStatistics(stored[ACTIVITY_STATISTICS_KEY], message.period, new Date(), {
+        retentionDays: preferences.activityRetentionDays,
+        referenceHours: preferences.activityReferenceHours
+      }));
     });
+    return true;
+  }
+  if (message?.kind === "getFeaturePreferences") {
+    featurePreferencesStorage().then((preferences) => sendResponse({ preferences })).catch(() => sendResponse({ preferences: DEFAULT_FEATURE_PREFERENCES }));
+    return true;
+  }
+  if (message?.kind === "inspectBookmarkURLs") {
+    inspectBookmarkURLs(message.urls).then((results) => sendResponse({ results })).catch(() => sendResponse({ results: [] }));
+    return true;
+  }
+  if (message?.kind === "setFeaturePreferences") {
+    featurePreferencesStorage().then(async (current) => {
+      const preferences = normalizeFeaturePreferences({ ...current, ...(message.preferences ?? {}) });
+      if (!preferences.cryptoGuardEnabled) cryptoGuardCopy = null;
+      await chrome.storage.local.set({ [FEATURE_PREFERENCES_KEY]: preferences });
+      sendResponse({ ok: true, preferences });
+    }).catch((error) => sendResponse({ ok: false, error: error?.message ?? "Preferences could not be saved" }));
     return true;
   }
   if (message?.kind === "getSiteDataCleanupState") {
     if (Number.isInteger(message.tabId)) {
-      try { lastTabOrigins.set(message.tabId, new URL(message.url).origin); } catch {}
+      void rememberTabOrigin(message.tabId, message.url);
     }
     chrome.storage.local.get({ [SITE_DATA_CLEANUP_KEY]: [] }).then((stored) => {
       const sites = sanitizeCleanupSites(stored[SITE_DATA_CLEANUP_KEY]);
@@ -1752,9 +2223,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+  if (message?.kind === "getCookieChanges") {
+    cookieChangeWrite.then(async () => {
+      const site = message.url ? registrableDomainFromURL(message.url) : "";
+      const stored = await chrome.storage.session.get({ [COOKIE_CHANGES_KEY]: [] });
+      const changes = (Array.isArray(stored[COOKIE_CHANGES_KEY]) ? stored[COOKIE_CHANGES_KEY] : [])
+        .filter((entry) => !site || entry.domain === site || entry.domain.endsWith(`.${site}`))
+        .slice(0, site ? 20 : 200);
+      sendResponse({ site, changes });
+    }).catch(() => sendResponse({ changes: [] }));
+    return true;
+  }
   if (message?.kind === "setSiteDataCleanup") {
     if (Number.isInteger(message.tabId)) {
-      try { lastTabOrigins.set(message.tabId, new URL(message.url).origin); } catch {}
+      void rememberTabOrigin(message.tabId, message.url);
     }
     chrome.storage.local.get({ [SITE_DATA_CLEANUP_KEY]: [] }).then(async (stored) => {
       const sites = sanitizeCleanupSites(stored[SITE_DATA_CLEANUP_KEY]);
@@ -1766,6 +2248,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       await chrome.storage.local.set({ [SITE_DATA_CLEANUP_KEY]: next });
       sendResponse({ site, enabled: next.includes(site), sites: next });
     }).catch((error) => sendResponse({ error: error?.message ?? "Cleanup policy could not be changed" }));
+    return true;
+  }
+  if (message?.kind === "resetSiteData") {
+    resetOriginData(message.origin, message.categories)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: error?.message ?? "Site reset failed", results: [] }));
+    return true;
+  }
+  if (message?.kind === "scheduleSiteReset") {
+    (async () => {
+      const request = normalizeSiteResetRequest(message.origin, message.categories);
+      const tabId = Number(message.tabId);
+      if (!Number.isInteger(tabId) || tabId < 0) throw new Error("Tab is unavailable");
+      const delayMinutes = Math.min(24 * 60, Math.max(0, Number(message.delayMinutes) || 0));
+      const pending = (await pendingSiteResets()).filter((entry) => !(entry.tabId === tabId && entry.state === "waiting-close"));
+      pending.push({
+        id: `${tabId}-${Date.now()}`,
+        tabId,
+        origin: request.origin,
+        categories: request.categories,
+        delayMinutes,
+        createdAt: Date.now(),
+        runAt: 0,
+        state: "waiting-close"
+      });
+      const sanitized = sanitizePendingSiteResets(pending);
+      await chrome.storage.local.set({ [PENDING_SITE_RESETS_KEY]: sanitized });
+      return { ok: true, pendingCount: sanitized.filter((entry) => entry.tabId === tabId).length };
+    })().then(sendResponse).catch((error) => sendResponse({ ok: false, error: error?.message ?? "Site reset could not be scheduled" }));
+    return true;
+  }
+  if (message?.kind === "getPendingSiteResets") {
+    pendingSiteResets().then((resets) => {
+      const tabId = Number(message.tabId);
+      sendResponse({ resets: Number.isInteger(tabId) ? resets.filter((entry) => entry.tabId === tabId) : resets });
+    }).catch(() => sendResponse({ resets: [] }));
     return true;
   }
   if (message?.kind === "getRedirectHistory") {
@@ -1796,6 +2314,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+  if (message?.kind === "getBlockingJournal") {
+    blockingJournalWrite.then(async () => {
+      const stored = await chrome.storage.local.get({ [BLOCKING_JOURNAL_KEY]: [] });
+      sendResponse({ entries: Array.isArray(stored[BLOCKING_JOURNAL_KEY]) ? stored[BLOCKING_JOURNAL_KEY] : [] });
+    });
+    return true;
+  }
+  if (message?.kind === "clearBlockingJournal") {
+    blockingJournalWrite = blockingJournalWrite.then(() => chrome.storage.local.set({ [BLOCKING_JOURNAL_KEY]: [] }));
+    blockingJournalWrite.then(() => sendResponse({ ok: true }));
+    return true;
+  }
   if (message?.kind === "clearBlockingStatistics") {
     pendingBlockingEvents = [];
     clearTimeout(blockingStatisticsTimer);
@@ -1812,12 +2342,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
     }
     getSponsorSegments(message.videoId)
-      .then((segments) => sendResponse({ segments }))
-      .catch(() => sendResponse({ segments: [] }));
+      .then(sendResponse)
+      .catch(() => sendResponse({ segments: [], status: "unavailable" }));
     return true;
   }
+  if (message?.kind === "recordSponsorStatus" && sender.tab?.id) {
+    sponsorStatusByTab.set(sender.tab.id, ["available", "disabled", "unavailable", "none"].includes(message.status) ? message.status : "unavailable");
+    sendResponse({ ok: true });
+    return false;
+  }
   if (message?.kind === "recordSponsorSegmentSkip" && senderIsYouTube(sender)) {
-    recordPrivacyBlock(sender.tab?.id, sender.url);
+    void recordPrivacyBlock(sender.tab?.id, sender.url);
     enqueueBlockingEvent({
       type: "sponsor",
       site: "youtube.com",
@@ -1829,7 +2364,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.kind === "recordVideoAdAction" && sender?.tab && /^https?:/.test(sender.url ?? "")) {
     const site = hostnameFromURL(sender.url);
     if (site) {
-      recordPrivacyBlock(sender.tab.id, sender.url);
+      void recordPrivacyBlock(sender.tab.id, sender.url);
       enqueueBlockingEvent({ type: "video", site, resource: `${site}:video-ad` });
     }
     sendResponse({ ok: true });
@@ -1906,7 +2441,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.kind === "collectNow") {
-    collectSnapshot().then(sendResponse);
+    collectSnapshot()
+      .then(sendResponse)
+      .catch(async (error) => {
+        const stored = await chrome.storage.local.get({ latestSnapshot: null }).catch(() => ({ latestSnapshot: null }));
+        const latest = stored.latestSnapshot;
+        if (latest && Array.isArray(latest.tabs)) {
+          sendResponse({ ...latest, stale: true, error: error?.message ?? "Snapshot collection failed" });
+          return;
+        }
+        sendResponse({
+          schemaVersion: 2,
+          generatedAt: new Date().toISOString(),
+          browser: "Google Chrome",
+          extensionEnabled: true,
+          monitoringEnabled: true,
+          monitoringActive: true,
+          tabs: [],
+          stale: true,
+          error: error?.message ?? "Snapshot collection failed"
+        });
+      });
     return true;
   }
   if (message?.kind === "setMonitoring") {
@@ -1920,7 +2475,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.kind === "setEcoMode") {
-    applyEcoMode(message.tabId, Boolean(message.enabled))
+    applyEcoMode(message.tabId, Boolean(message.enabled), new Date().toISOString(), {
+      level: message.level,
+      durationMinutes: message.durationMinutes
+    })
       .then(() => collectSnapshot())
       .then(sendResponse);
     return true;
@@ -1949,6 +2507,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(() => contentBlockingState(message.url))
       .then(sendResponse)
       .catch((error) => sendResponse({ error: error?.message ?? "The temporary pause could not be changed" }));
+    return true;
+  }
+  if (message?.kind === "bypassSiteOnce") {
+    bypassSiteOnce(message.domain).then(sendResponse).catch((error) => sendResponse({ ok: false, error: error?.message }));
     return true;
   }
   if (message?.kind === "getPictureInPictureState") {
@@ -2022,7 +2584,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         monitoringEnabled: payload.monitoringEnabled !== false,
         monitoringUpdatedAt: new Date().toISOString(),
         linkSafetySettings: normalizeLinkSafetySettings(payload.linkSafety?.settings),
-        linkSafetyAllowedDomains: sanitizeLinkSafetyDomains(payload.linkSafety?.allowedDomains),
+        linkSafetyAllowedDomains: sanitizeLinkSafetyTrustedHosts(payload.linkSafety?.allowedDomains),
         linkSafetyBlockedDomains: sanitizeLinkSafetyDomains(payload.linkSafety?.blockedDomains),
         historyPrivacySettings: normalizeHistoryPrivacySettings(payload.historyPrivacy)
       });
@@ -2135,7 +2697,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
     }
     chrome.storage.local.get({ ecoTabs: {} }).then(({ ecoTabs }) => {
-      sendResponse({ enabled: Boolean(ecoTabs[String(tabId)]) });
+      const entry = ecoTabs[String(tabId)];
+      sendResponse({ enabled: Boolean(entry), level: entry?.level ?? (entry ? "limit" : null), expiresAt: entry?.expiresAt ?? 0 });
     });
     return true;
   }

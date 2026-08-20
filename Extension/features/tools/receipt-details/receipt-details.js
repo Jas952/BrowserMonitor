@@ -7,9 +7,22 @@ const blockedEmpty = document.querySelector("#blocked-empty");
 const thirdPartyCount = document.querySelector("#third-party-count");
 const thirdPartyConnections = document.querySelector("#third-party-connections");
 const thirdPartyEmpty = document.querySelector("#third-party-empty");
+const allowedTotal = document.querySelector("#allowed-total");
+const blockedTotal = document.querySelector("#blocked-total");
+const unknownTotal = document.querySelector("#unknown-total");
 
 let language = "en";
 const t = (key, values) => translate(language, key, values);
+
+function domainCategory(domain) {
+  const value = String(domain ?? "").toLowerCase();
+  if (/(^|[.-])(ads?|adservice|doubleclick|marketing|promo)([.-]|$)/.test(value)) return "ads";
+  if (/(analytics|metrics|telemetry|segment|amplitude|clarity|hotjar)/.test(value)) return "analytics";
+  if (/(youtube|vimeo|rutube|video|stream|media)/.test(value)) return "video";
+  if (/(facebook|instagram|twitter|tiktok|reddit|linkedin|vk\.com)/.test(value)) return "social";
+  if (/(cdn|cloudfront|fastly|akamai|static|assets|img)/.test(value)) return "cdn";
+  return "other";
+}
 
 function renderList(listElement, emptyElement, countElement, data) {
   const items = Array.isArray(data) ? data : [];
@@ -18,11 +31,18 @@ function renderList(listElement, emptyElement, countElement, data) {
   
   listElement.replaceChildren(...items.map(({ domain, count }) => {
     const li = document.createElement("li");
+    const nameWrap = document.createElement("span");
+    nameWrap.className = "domain-entry";
     const nameSpan = document.createElement("span");
     nameSpan.textContent = domain;
+    const categoryName = domainCategory(domain);
+    const category = document.createElement("span");
+    category.className = "domain-category";
+    category.textContent = t(`receiptCategory${categoryName[0].toUpperCase()}${categoryName.slice(1)}`);
+    nameWrap.append(nameSpan, category);
     const countStrong = document.createElement("strong");
     countStrong.textContent = count;
-    li.append(nameSpan, countStrong);
+    li.append(nameWrap, countStrong);
     return li;
   }));
 }
@@ -52,6 +72,9 @@ async function bootstrap() {
     });
     
     detailsDomain.textContent = receipt.domain || t("currentSite");
+    allowedTotal.textContent = Number(receipt.allowedRequests) || 0;
+    blockedTotal.textContent = Number(receipt.blockedRequests) || 0;
+    unknownTotal.textContent = Number(receipt.unknownRequests) || 0;
     
     renderList(blockedResources, blockedEmpty, blockedCount, receipt.blockedDomains);
     renderList(thirdPartyConnections, thirdPartyEmpty, thirdPartyCount, receipt.thirdPartyDomains);

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browser Monitor — Cookie history</title>
+  <link rel="stylesheet" href="cookie-history.css">
+</head>
+<body>
+  <header class="page-header">
+    <div class="brand">
+      <img src="../../../icons/browser-monitor-shield-48.png" alt="">
+      <div><h1 data-i18n="cookieHistoryTitle">Cookie history</h1><p data-i18n="cookieHistoryDescription">Value-free changes observed during this browser session.</p></div>
+    </div>
+    <button id="refresh-history" class="icon-button" type="button" data-i18n-aria="refresh" aria-label="Refresh">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7L20 14.4"/><path d="M20 20v-5.6h-5.6"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <section class="export-card" aria-labelledby="browser-export-title">
+      <div class="card-copy"><span data-i18n="cookieBrowserScope">Browser-wide</span><h2 id="browser-export-title" data-i18n="cookieBrowserExportTitle">Export all cookies</h2><p data-i18n="cookieBrowserExportDescription">Creates one local backup containing cookies from every browser site.</p></div>
+      <div class="export-controls">
+        <label for="cookie-history-format" data-i18n="exportFormat">Export format</label>
+        <select id="cookie-history-format"><option value="netscape">Netscape cookies.txt</option><option value="json">JSON</option></select>
+        <button id="export-browser-cookies" type="button" data-i18n="exportAllCookies">Export all browser cookies</button>
+      </div>
+      <p class="security-note" data-i18n="cookieAdvancedWarning">Includes sign-in cookies from every site. Use only for a deliberate backup.</p>
+    </section>
+
+    <section class="history-card" aria-labelledby="history-list-title">
+      <div class="section-heading"><div><h2 id="history-list-title" data-i18n="cookieChangesTitle">Changes during this browser session</h2><p data-i18n="cookieHistoryPrivacy">Values are never stored in this history.</p></div><strong id="cookie-history-count">0</strong></div>
+      <div class="history-table-wrap">
+        <table>
+          <thead><tr><th data-i18n="cookieHistoryTime">Time</th><th data-i18n="cookieDomain">Domain</th><th data-i18n="cookieIdentity">Cookie</th><th data-i18n="cookieHistoryEvent">Event</th></tr></thead>
+          <tbody id="cookie-history-rows"></tbody>
+        </table>
+        <p id="cookie-history-empty" class="empty" data-i18n="cookieHistoryEmpty">No cookie changes have been observed in this browser session.</p>
+      </div>
+    </section>
+
+    <section id="cookie-permission-card" class="permission-card" hidden>
+      <div><h2 data-i18n="cookieAccessTitle">Cookie access required</h2><p data-i18n="cookieAccessDescription">Grant access to begin recording value-free cookie changes and enable browser-wide export.</p></div>
+      <button id="grant-cookie-access" type="button" data-i18n="cookieGrantAccess">Grant access</button>
+    </section>
+  </main>
+  <footer><p id="cookie-history-status" role="status" aria-live="polite" data-i18n="cookieHistorySessionNote">History is kept locally for up to 12 hours and is cleared with the browser session.</p></footer>
+  <script type="module" src="cookie-history.js"></script>
+</body>
+</html>

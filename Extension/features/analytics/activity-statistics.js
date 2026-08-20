@@ -31,11 +31,11 @@ function normalizedSite(value = {}) {
   };
 }
 
-function acceptedDayKeys(now) {
+function acceptedDayKeys(now, retentionDays = RETENTION_DAYS) {
   const keys = new Set();
   const current = validDate(now);
   current.setHours(12, 0, 0, 0);
-  for (let offset = 0; offset < RETENTION_DAYS; offset += 1) {
+  for (let offset = 0; offset < Math.min(RETENTION_DAYS, Math.max(7, Number(retentionDays) || RETENTION_DAYS)); offset += 1) {
     const date = new Date(current);
     date.setDate(date.getDate() - offset);
     keys.add(localActivityDayKey(date));
@@ -43,8 +43,8 @@ function acceptedDayKeys(now) {
   return keys;
 }
 
-export function normalizeActivityStatistics(input, now = new Date()) {
-  const accepted = acceptedDayKeys(now);
+export function normalizeActivityStatistics(input, now = new Date(), retentionDays = RETENTION_DAYS) {
+  const accepted = acceptedDayKeys(now, retentionDays);
   const days = {};
   for (const [key, value] of Object.entries(input?.days ?? {})) {
     if (!accepted.has(key)) continue;
@@ -60,9 +60,9 @@ export function normalizeActivityStatistics(input, now = new Date()) {
   return { version: 1, days };
 }
 
-export function recordActivitySample(input, sample, domain, now = new Date()) {
+export function recordActivitySample(input, sample, domain, now = new Date(), options = {}) {
   const date = validDate(now);
-  const statistics = normalizeActivityStatistics(input, date);
+  const statistics = normalizeActivityStatistics(input, date, options.retentionDays);
   const key = localActivityDayKey(date);
   const day = statistics.days[key] ?? { sites: {} };
   const normalizedDomain = safeDomain(domain);
@@ -77,7 +77,7 @@ export function recordActivitySample(input, sample, domain, now = new Date()) {
   site.readingSeconds += readingSeconds;
   day.sites[normalizedDomain] = site;
   statistics.days[key] = day;
-  return normalizeActivityStatistics(statistics, date);
+  return normalizeActivityStatistics(statistics, date, options.retentionDays);
 }
 
 function periodStart(period, now) {
@@ -114,12 +114,23 @@ function workHoursForPeriod(period, now) {
   return weekdays * 8;
 }
 
-export function summarizeActivityStatistics(input, period = "day", now = new Date()) {
-  const statistics = normalizeActivityStatistics(input, now);
+function previousPeriodRange(period, now) {
+  const end = periodStart(period, now);
+  const start = new Date(end);
+  if (period === "day") start.setDate(start.getDate() - 1);
+  else if (period === "week") start.setDate(start.getDate() - 7);
+  else start.setMonth(start.getMonth() - 1);
+  return { start, end };
+}
+
+export function summarizeActivityStatistics(input, period = "day", now = new Date(), options = {}) {
+  const statistics = normalizeActivityStatistics(input, now, options.retentionDays);
   const selectedPeriod = ["day", "week", "month"].includes(period) ? period : "day";
   const start = periodStart(selectedPeriod, now);
   const totalSites = {};
   const periodSites = {};
+  const previousSites = {};
+  const previousRange = previousPeriodRange(selectedPeriod, now);
   const chart = [];
   for (let offset = 29; offset >= 0; offset -= 1) {
     const date = validDate(now);
@@ -135,13 +146,19 @@ export function summarizeActivityStatistics(input, period = "day", now = new Dat
     chart.push({ key, ...totals });
   }
   for (const [key, day] of Object.entries(statistics.days)) {
-    const inPeriod = new Date(`${key}T12:00:00`) >= start;
+    const dayDate = new Date(`${key}T12:00:00`);
+    const inPeriod = dayDate >= start;
+    const inPrevious = dayDate >= previousRange.start && dayDate < previousRange.end;
     for (const [domain, site] of Object.entries(day.sites)) {
       totalSites[domain] ??= normalizedSite();
       sumSite(totalSites[domain], site);
       if (inPeriod) {
         periodSites[domain] ??= normalizedSite();
         sumSite(periodSites[domain], site);
+      }
+      if (inPrevious) {
+        previousSites[domain] ??= normalizedSite();
+        sumSite(previousSites[domain], site);
       }
     }
   }
@@ -153,14 +170,31 @@ export function summarizeActivityStatistics(input, period = "day", now = new Dat
   })).sort((left, right) => right.activeSeconds - left.activeSeconds || right.visits - left.visits);
   const totals = normalizedSite();
   for (const site of Object.values(periodSites)) sumSite(totals, site);
+  const previousTotals = normalizedSite();
+  for (const site of Object.values(previousSites)) sumSite(previousTotals, site);
+  const delta = (current, previous) => previous > 0
+    ? Math.round((current - previous) / previous * 100)
+    : current > 0 ? 100 : 0;
+  const configuredDailyHours = Number(options.referenceHours);
+  const dailyHours = Number.isFinite(configuredDailyHours) ? Math.min(24, Math.max(1, configuredDailyHours)) : null;
+  const standardHours = workHoursForPeriod(selectedPeriod, now);
+  const referenceHours = dailyHours === null
+    ? standardHours
+    : selectedPeriod === "day" ? dailyHours : dailyHours * (standardHours / 8);
   return {
     period: selectedPeriod,
     totals: { ...totals, averageVisitSeconds: totals.visits ? Math.round(totals.activeSeconds / totals.visits) : 0 },
     sites,
     chart: selectedPeriod === "day" ? chart.slice(-1) : selectedPeriod === "week" ? chart.slice(-7) : chart,
+    comparison: {
+      previous: previousTotals,
+      activePercent: delta(totals.activeSeconds, previousTotals.activeSeconds),
+      visitsPercent: delta(totals.visits, previousTotals.visits)
+    },
+    retentionDays: Math.min(RETENTION_DAYS, Math.max(7, Number(options.retentionDays) || RETENTION_DAYS)),
     humor: {
-      workHours: workHoursForPeriod(selectedPeriod, now),
-      workdayPercent: Math.round(totals.activeSeconds / (workHoursForPeriod(selectedPeriod, now) * 3600) * 100),
+      workHours: referenceHours,
+      workdayPercent: Math.round(totals.activeSeconds / (referenceHours * 3600) * 100),
       focusBlocks: Math.round(totals.activeSeconds / (25 * 60) * 10) / 10,
       coffeeBreaks: Math.round(totals.activeSeconds / (15 * 60) * 10) / 10,
       featureFilms: Math.round(totals.activeSeconds / (110 * 60) * 10) / 10
