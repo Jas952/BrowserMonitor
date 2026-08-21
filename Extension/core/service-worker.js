@@ -145,34 +145,6 @@ async function featurePreferencesStorage() {
   return normalizeFeaturePreferences(stored[FEATURE_PREFERENCES_KEY]);
 }
 
-async function inspectBookmarkURL(rawURL) {
-  const parsed = parseURLParts(rawURL);
-  if (!parsed) return { url: String(rawURL), status: "invalid", statusCode: 0, finalURL: "" };
-  try {
-    const response = await withTimeout(fetch(parsed.href, { method: "HEAD", redirect: "follow", cache: "no-store", credentials: "omit" }), 6_000, "Bookmark check");
-    const finalURL = response.url || parsed.href;
-    return {
-      url: parsed.href,
-      status: response.ok ? (finalURL !== parsed.href ? "redirect" : "healthy") : "unavailable",
-      statusCode: response.status,
-      finalURL
-    };
-  } catch {
-    return { url: parsed.href, status: "unavailable", statusCode: 0, finalURL: "" };
-  }
-}
-
-async function inspectBookmarkURLs(urls) {
-  const queue = [...new Set((Array.isArray(urls) ? urls : []).map(String))].slice(0, 200);
-  const results = [];
-  let next = 0;
-  async function worker() {
-    while (next < queue.length) results.push(await inspectBookmarkURL(queue[next++]));
-  }
-  await Promise.all(Array.from({ length: Math.min(6, queue.length) }, worker));
-  return results;
-}
-
 function sanitizedStringList(values, { limit, maximumLength, transform = (value) => value } = {}) {
   const result = [];
   for (const rawValue of Array.isArray(values) ? values : []) {
@@ -2197,10 +2169,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.kind === "getFeaturePreferences") {
     featurePreferencesStorage().then((preferences) => sendResponse({ preferences })).catch(() => sendResponse({ preferences: DEFAULT_FEATURE_PREFERENCES }));
-    return true;
-  }
-  if (message?.kind === "inspectBookmarkURLs") {
-    inspectBookmarkURLs(message.urls).then((results) => sendResponse({ results })).catch(() => sendResponse({ results: [] }));
     return true;
   }
   if (message?.kind === "setFeaturePreferences") {

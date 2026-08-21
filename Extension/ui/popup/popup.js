@@ -424,59 +424,54 @@ function flattenBookmarks(nodes, result = []) {
   return result;
 }
 
-function canonicalBookmarkURL(raw) {
+async function runBookmarkReview() {
+  scanBookmarks.disabled = true;
+  scanBookmarks.setAttribute("aria-busy", "true");
+  scanBookmarks.textContent = t("bookmarkChecking");
+  reviewStatus.textContent = "";
   try {
-    const url = new URL(raw);
-    if (!/^https?:$/.test(url.protocol)) return "";
-    url.hash = "";
-    for (const key of [...url.searchParams.keys()]) if (/^utm_|^(fbclid|gclid)$/i.test(key)) url.searchParams.delete(key);
-    url.hostname = url.hostname.toLowerCase();
-    if (url.pathname !== "/") url.pathname = url.pathname.replace(/\/+$/, "");
-    url.searchParams.sort();
-    return url.href;
+    const permission = await ensureOptionalPermission("bookmarks", "bookmarksPermissionPrompt");
+    if (!permission) {
+      reviewStatus.textContent = t("permissionRequired");
+      return;
+    }
+    const bookmarks = flattenBookmarks(await chrome.bookmarks.getTree());
+    const issues = bookmarkStructureIssues(bookmarks);
+    reviewCount.textContent = formatNumber(issues.length);
+    reviewStatus.textContent = t(issues.length ? "bookmarkIssuesFound" : "bookmarkHealthy", { count: issues.length || bookmarks.length });
+    if (!issues.length) return reviewEmpty(bookmarkList, "bookmarkNoIssues");
+    bookmarkList.replaceChildren(...issues.map(({ bookmark, type }) => {
+      const row = document.createElement("div");
+      row.className = "review-row";
+      const marker = document.createElement("span");
+      marker.textContent = type === "duplicate" ? "=" : "!";
+      const text = document.createElement("span");
+      const title = document.createElement("strong");
+      title.textContent = bookmark.title || bookmark.url;
+      const url = document.createElement("small");
+      url.textContent = bookmark.url;
+      text.append(title, url);
+      const badge = document.createElement("span");
+      badge.className = "review-badge";
+      badge.textContent = t(type === "duplicate" ? "bookmarkDuplicate" : "bookmarkInvalid");
+      row.append(marker, text, badge);
+      return row;
+    }));
   } catch {
-    return "";
+    reviewCount.textContent = "0";
+    reviewStatus.textContent = t("bookmarkScanFailed");
+    reviewEmpty(bookmarkList, "bookmarkStartScan");
+  } finally {
+    scanBookmarks.disabled = false;
+    scanBookmarks.removeAttribute("aria-busy");
+    const granted = await chrome.permissions.contains({ permissions: ["bookmarks"] }).catch(() => false);
+    scanBookmarks.textContent = t(granted ? "scanBookmarksAgain" : "scanBookmarks");
   }
 }
 
-async function runBookmarkReview() {
-  const permission = await ensureOptionalPermission("bookmarks", "bookmarksPermissionPrompt");
-  if (!permission) {
-    reviewStatus.textContent = t("permissionRequired");
-    return;
-  }
-  const bookmarks = flattenBookmarks(await chrome.bookmarks.getTree());
-  reviewStatus.textContent = t("bookmarkChecking");
-  const issues = bookmarkStructureIssues(bookmarks);
-  const valid = bookmarks.filter((bookmark) => canonicalBookmarkURL(bookmark.url)).slice(0, 200);
-  const network = await chrome.runtime.sendMessage({ kind: "inspectBookmarkURLs", urls: valid.map((bookmark) => bookmark.url) }).catch(() => ({ results: [] }));
-  const byURL = new Map((network.results ?? []).map((result) => [canonicalBookmarkURL(result.url), result]));
-  for (const bookmark of valid) {
-    const result = byURL.get(canonicalBookmarkURL(bookmark.url));
-    if (result && ["redirect", "unavailable"].includes(result.status)) issues.push({ bookmark, type: result.status, result });
-  }
-  reviewCount.textContent = formatNumber(issues.length);
-  reviewStatus.textContent = t(issues.length ? "bookmarkIssuesFound" : "bookmarkHealthy", { count: issues.length || bookmarks.length });
-  if (!issues.length) return reviewEmpty(bookmarkList, "bookmarkNoIssues");
-  bookmarkList.replaceChildren(...issues.map(({ bookmark, type, result }) => {
-    const row = document.createElement("div");
-    row.className = "review-row";
-    const marker = document.createElement("span");
-    marker.textContent = type === "duplicate" ? "=" : type === "redirect" ? "→" : "!";
-    const text = document.createElement("span");
-    const title = document.createElement("strong");
-    title.textContent = bookmark.title || bookmark.url;
-    const url = document.createElement("small");
-    url.textContent = bookmark.url;
-    text.append(title, url);
-    const badge = document.createElement("span");
-    badge.className = "review-badge";
-    const labelKey = type === "duplicate" ? "bookmarkDuplicate" : type === "redirect" ? "bookmarkRedirect" : type === "unavailable" ? "bookmarkUnavailable" : "bookmarkInvalid";
-    badge.textContent = t(labelKey);
-    if (result?.statusCode) badge.title = `HTTP ${result.statusCode}${result.finalURL ? ` · ${result.finalURL}` : ""}`;
-    row.append(marker, text, badge);
-    return row;
-  }));
+async function updateBookmarkScanAction() {
+  const granted = await chrome.permissions.contains({ permissions: ["bookmarks"] }).catch(() => false);
+  scanBookmarks.textContent = t(granted ? "scanBookmarksAgain" : "scanBookmarks");
 }
 
 function selectReviewView(name) {
@@ -490,6 +485,7 @@ function selectReviewView(name) {
   else {
     reviewCount.textContent = "0";
     if (!bookmarkList.children.length) reviewEmpty(bookmarkList, "bookmarkStartScan");
+    void updateBookmarkScanAction();
   }
 }
 

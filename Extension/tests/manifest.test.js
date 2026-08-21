@@ -165,6 +165,8 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(popupHTML, /id="review-panel"/);
   assert.match(popupJS, /siteResetButton\.addEventListener\("click", openSiteReset\)/);
   assert.match(popupJS, /reviewButton\.addEventListener\("click", openReview\)/);
+  assert.doesNotMatch(popupJS, /inspectBookmarkURLs/);
+  assert.doesNotMatch(serviceWorker, /inspectBookmarkURLs/);
   assert.doesNotMatch(popupJS, /features\/tools\/(?:safe-screenshot|site-reset|stale-tabs|bookmark-health)\//);
   assert.match(serviceWorker, /kind === "scheduleSiteReset"/);
   assert.match(serviceWorker, /handlePendingSiteResetsForClosedTab\(tabId\)/);
@@ -215,6 +217,7 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(popupHTML, /id="previous-tools"[^>]*>\s*<svg/s);
   assert.match(popupHTML, /id="next-tools"[^>]*>\s*<svg/s);
   assert.match(popupCSS, /\.duplicates-list\s*\{[^}]*flex:\s*1[^}]*overflow-y:\s*auto/s);
+  assert.match(popupCSS, /\.review-actions > button\s*\{[^}]*height:\s*30px[^}]*border-radius:\s*8px[^}]*font-size:\s*8px[^}]*font-weight:\s*620/s);
   assert.match(popupCSS, /\.eco-button\s*\{[^}]*width:\s*52px/s);
   assert.match(popupCSS, /\.protection-detail\s*\{[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis/s);
   assert.match(popupCSS, /\.app-header\s*\{[^}]*padding:\s*20px 30px 17px 20px/s);
