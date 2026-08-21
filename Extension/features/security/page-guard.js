@@ -5,7 +5,8 @@
   const BECH32 = "[ac-hj-np-z02-9]";
   const SOCIAL_VIDEO_HOSTS = new Set([
     "x.com", "twitter.com", "instagram.com", "facebook.com", "tiktok.com",
-    "reddit.com", "linkedin.com", "threads.net", "vk.com", "ok.ru"
+    "reddit.com", "linkedin.com", "threads.net", "vk.com", "ok.ru",
+    "twitch.tv", "kick.com", "telegram.org", "web.telegram.org", "t.me"
   ]);
   const LONG_FORM_VIDEO_HOSTS = new Set([
     "youtube.com", "youtu.be", "rutube.ru", "vimeo.com", "dailymotion.com",
@@ -185,9 +186,13 @@
     if (input.advertisement === true) return { supported: false, reason: "advertisement" };
     if (!Number.isFinite(duration) || duration < 120) return { supported: false, reason: "short" };
     if (hostnameMatches(hostname, SOCIAL_VIDEO_HOSTS)) return { supported: false, reason: "social-feed" };
+    if (/(?:^|\/)(?:shorts?|reels?|clips?|stories)(?:\/|$)/.test(pathname)) {
+      return { supported: false, reason: "short-form-route" };
+    }
 
     const largePlayer = width >= 420 && height >= 236;
     if (!largePlayer) return { supported: false, reason: "small-player" };
+    if (height > width * 1.12 && duration < 600) return { supported: false, reason: "vertical-short-form" };
 
     const knownVideoHost = hostnameMatches(hostname, LONG_FORM_VIDEO_HOSTS);
     const pathHint = /(?:^|\/)(?:watch|video|videos|film|films|movie|movies|series|serial|episode|episodes|show|shows|player|embed)(?:\/|$)/.test(pathname);

@@ -73,6 +73,18 @@
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
   }
 
+  function thumbnailURL(video) {
+    const candidate = document.querySelector("meta[property='og:image'], meta[name='twitter:image']")?.content
+      || video.poster
+      || "";
+    try {
+      const parsed = new URL(candidate, location.href);
+      return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : "";
+    } catch {
+      return "";
+    }
+  }
+
   function mediaPresentation(title) {
     const types = structuredMediaTypes().map((value) => value.toLowerCase());
     const params = new URLSearchParams(location.search);
@@ -126,8 +138,13 @@
   }
 
   function restore(video, position) {
+    let restored = false;
     const apply = () => {
-      if (!video.isConnected || video.ended || video.currentTime >= 5) return;
+      if (restored || !video.isConnected || video.ended) return;
+      if (Math.abs(Number(video.currentTime) - position) <= 2) {
+        restored = true;
+        return;
+      }
       try {
         if (typeof video.fastSeek === "function") video.fastSeek(position);
         else video.currentTime = position;
@@ -136,10 +153,10 @@
       }
     };
     apply();
-    video.addEventListener("loadeddata", apply, { once: true });
-    video.addEventListener("canplay", apply, { once: true });
-    setTimeout(apply, 250);
-    setTimeout(apply, 1_000);
+    for (const event of ["loadedmetadata", "durationchange", "loadeddata", "canplay", "playing"]) {
+      video.addEventListener(event, apply, { once: true });
+    }
+    for (const delay of [250, 1_000, 2_500, 5_000]) setTimeout(apply, delay);
   }
 
   async function initialize(video) {
@@ -161,6 +178,7 @@
       source,
       lastSavedAt: 0,
       title,
+      thumbnailURL: thumbnailURL(video),
       ...mediaPresentation(title)
     });
     const saved = await chrome.runtime.sendMessage({ kind: "getContinueWatchingPosition", identity }).catch(() => null);
@@ -186,6 +204,7 @@
       title: state.title,
       episode: state.episode,
       mediaType: state.mediaType,
+      thumbnailURL: state.thumbnailURL,
       pageURL: location.href,
       completed: completed || position >= video.duration - 20
     }).catch(() => {});

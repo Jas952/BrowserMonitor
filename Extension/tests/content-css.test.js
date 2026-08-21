@@ -17,6 +17,15 @@ test("Continue Watching notice opens the saved page and reapplies the saved posi
   assert.match(source, /continueWatchingResumeURL\(url, position\)/);
   assert.match(source, /parsed\.searchParams\.set\("t", `\$\{Math\.max\(0, Math\.floor\(position\)\)\}s`\)/);
   assert.match(source, /restoreContinueWatchingPosition\(video, position\)/);
+  assert.match(source, /for \(const delay of \[250, 1_000, 2_500, 5_000\]\)/);
+  assert.match(source, /Math\.abs\(Number\(video\.currentTime\) - position\) <= 2/);
+});
+
+test("startup recap is a one-minute in-page card with both actions", () => {
+  assert.match(source, /browser-monitor-startup-recap/);
+  assert.match(source, /kind: "openStartupTabs"/);
+  assert.match(source, /kind: "openStartupVideo"/);
+  assert.match(source, /remaining = 60_000/);
 });
 
 test("subscription cosmetics do not hide empty video player placeholders", () => {

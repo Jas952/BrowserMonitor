@@ -8,7 +8,7 @@ test("manifest is valid Manifest V3 JSON", () => {
 
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.name, "Browser Monitor");
-  assert.equal(manifest.version, "1.1.4");
+  assert.equal(manifest.version, "1.1.5");
   assert.ok(!("key" in manifest));
   assert.equal(manifest.background.type, "module");
   assert.ok(!manifest.permissions.includes("nativeMessaging"));
@@ -17,6 +17,7 @@ test("manifest is valid Manifest V3 JSON", () => {
   assert.ok(manifest.permissions.includes("scripting"));
   assert.ok(manifest.permissions.includes("webRequest"));
   assert.ok(manifest.permissions.includes("webNavigation"));
+  assert.ok(manifest.permissions.includes("sessions"));
   assert.ok(!manifest.permissions.includes("cookies"));
   assert.ok(!manifest.permissions.includes("downloads"));
   assert.ok(!manifest.permissions.includes("clipboardWrite"));

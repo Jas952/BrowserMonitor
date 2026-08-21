@@ -1433,6 +1433,168 @@
     setTimeout(() => host.remove(), 8_000);
   }
 
+  function showStartupRecap(payload) {
+    if (!payload || (!payload.tabs?.length && !payload.video)) return false;
+    const recapID = "browser-monitor-startup-recap";
+    document.querySelector(`#${recapID}`)?.remove();
+    const russian = payload.language === "ru";
+    const host = document.createElement("div");
+    host.id = recapID;
+    host.dataset.browserMonitorNotice = "startup-recap";
+    host.style.setProperty("all", "initial", "important");
+    host.style.setProperty("position", "fixed", "important");
+    host.style.setProperty("top", "18px", "important");
+    host.style.setProperty("right", "18px", "important");
+    host.style.setProperty("display", "block", "important");
+    host.style.setProperty("width", "min(390px, calc(100vw - 36px))", "important");
+    host.style.setProperty("z-index", "2147483647", "important");
+    host.style.setProperty("isolation", "isolate", "important");
+    host.style.setProperty("color-scheme", "light dark", "important");
+    const shadow = host.attachShadow({ mode: "open" });
+    shadow.innerHTML = `
+      <style>
+        :host { position:fixed; top:18px; right:18px; z-index:2147483647; display:block; width:min(390px,calc(100vw - 36px)); color-scheme:light dark; }
+        .stack { display:grid; gap:10px; font:500 13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+        .card { overflow:hidden; border:1px solid rgba(62,72,78,.18); border-radius:15px; background:#f8f9f7; color:#20272b; box-shadow:0 14px 38px rgba(17,24,28,.18); }
+        .heading { display:flex; align-items:center; min-height:24px; padding:14px 14px 8px; }
+        .heading strong { min-width:0; flex:1; font-size:14px; }
+        .count { min-width:25px; padding:3px 7px; border-radius:999px; background:#e9eceb; color:#687176; text-align:center; font-size:11px; }
+        .tabs { display:grid; max-height:244px; margin:0; padding:0 10px 7px; overflow:auto; list-style:none; scrollbar-width:thin; }
+        .tab { display:grid; grid-template-columns:20px minmax(0,1fr); align-items:center; gap:9px; min-height:34px; padding:4px 5px; border-radius:8px; }
+        .tab + .tab { border-top:1px solid rgba(62,72,78,.09); border-radius:0; }
+        .favicon { width:18px; height:18px; object-fit:contain; }
+        .favicon.fallback { display:grid; place-items:center; border-radius:5px; background:#e3e9eb; color:#4f6b78; font-size:10px; font-weight:750; }
+        .tab span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:9px 12px 12px; border-top:1px solid rgba(62,72,78,.1); }
+        button { min-height:34px; border:1px solid rgba(62,72,78,.16); border-radius:9px; background:#f4f5f3; color:inherit; cursor:pointer; font:650 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+        button:hover { background:#ecefed; }
+        button:focus-visible { outline:2px solid #6e8b99; outline-offset:2px; }
+        .primary { border-color:#728e9b; background:#dfe8eb; color:#294b5a; }
+        .primary:hover { background:#d4e1e5; }
+        .video { display:grid; grid-template-columns:112px minmax(0,1fr); min-height:104px; }
+        .preview { position:relative; min-height:104px; overflow:hidden; background:linear-gradient(145deg,#dce5e8,#b9cbd2); }
+        .preview img { width:100%; height:100%; min-height:104px; object-fit:cover; }
+        .preview::after { content:"▶"; position:absolute; left:50%; top:50%; display:grid; width:34px; height:34px; place-items:center; border-radius:50%; background:rgba(20,27,31,.78); color:white; font-size:13px; transform:translate(-50%,-50%); }
+        .video-copy { display:flex; min-width:0; flex-direction:column; padding:13px 13px 12px; }
+        .eyebrow { margin-bottom:4px; color:#567382; font-size:10px; font-weight:750; letter-spacing:.08em; text-transform:uppercase; }
+        .title { display:-webkit-box; overflow:hidden; color:inherit; font-size:13px; font-weight:700; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+        .time { margin-top:5px; color:#687176; font-size:11px; }
+        .play { align-self:flex-end; width:34px; min-height:30px; margin-top:auto; padding:0; border-color:#728e9b; background:#dfe8eb; color:#294b5a; font-size:12px; }
+        @media (prefers-color-scheme:dark) {
+          .card { border-color:rgba(255,255,255,.12); background:#1b1e1f; color:#edf0f1; box-shadow:0 16px 42px rgba(0,0,0,.34); }
+          .count { background:#353a3c; color:#b8c0c3; } .tab + .tab,.actions { border-color:rgba(255,255,255,.09); }
+          button { border-color:rgba(255,255,255,.13); background:#2d3234; } button:hover { background:#373d3f; }
+          .primary,.play { border-color:#668592; background:#30434a; color:#c6dce4; }
+          .primary:hover,.play:hover { background:#38505a; } .eyebrow { color:#92b3c1; } .time { color:#abb4b8; }
+          .favicon.fallback { background:#34454c; color:#c6dce4; }
+          .preview { background:linear-gradient(145deg,#35464d,#243238); }
+        }
+        @media (max-width:460px) { :host { top:10px; right:10px; width:calc(100vw - 20px); } .video { grid-template-columns:96px minmax(0,1fr); } }
+      </style>
+      <div class="stack"></div>
+    `;
+    const stack = shadow.querySelector(".stack");
+    if (payload.tabs?.length) {
+      const card = document.createElement("section");
+      card.className = "card";
+      card.setAttribute("role", "region");
+      card.setAttribute("aria-label", russian ? "Вкладки прошлой сессии" : "Tabs from the previous session");
+      card.innerHTML = `<div class="heading"><strong></strong><span class="count"></span></div><ul class="tabs"></ul><div class="actions"><button class="primary" type="button"></button><button class="close" type="button"></button></div>`;
+      card.querySelector("strong").textContent = russian ? "Вкладки прошлой сессии" : "Previous session tabs";
+      card.querySelector(".count").textContent = String(payload.tabs.length);
+      const list = card.querySelector(".tabs");
+      for (const tab of payload.tabs) {
+        const item = document.createElement("li");
+        item.className = "tab";
+        const icon = document.createElement(tab.faviconURL ? "img" : "span");
+        icon.className = "favicon";
+        if (tab.faviconURL) {
+          icon.alt = "";
+          icon.src = tab.faviconURL;
+          icon.referrerPolicy = "no-referrer";
+          icon.addEventListener("error", () => {
+            const fallback = document.createElement("span");
+            fallback.className = "favicon fallback";
+            fallback.textContent = tab.title.slice(0, 1).toUpperCase();
+            icon.replaceWith(fallback);
+          }, { once: true });
+        } else {
+          icon.classList.add("fallback");
+          icon.textContent = tab.title.slice(0, 1).toUpperCase();
+        }
+        const title = document.createElement("span");
+        title.textContent = tab.title;
+        title.title = tab.title;
+        item.append(icon, title);
+        list.append(item);
+      }
+      const openAll = card.querySelector(".primary");
+      openAll.textContent = russian ? "Открыть все" : "Open all";
+      openAll.addEventListener("click", () => {
+        chrome.runtime.sendMessage({ kind: "openStartupTabs", urls: payload.tabs.map((tab) => tab.url) }).catch(() => {});
+        host.remove();
+      });
+      const close = card.querySelector(".close");
+      close.textContent = russian ? "Закрыть" : "Close";
+      close.addEventListener("click", () => host.remove());
+      stack.append(card);
+    }
+    if (payload.video) {
+      const card = document.createElement("section");
+      card.className = "card video";
+      card.setAttribute("role", "region");
+      card.setAttribute("aria-label", russian ? "Продолжить просмотр" : "Continue watching");
+      card.innerHTML = `<div class="preview"></div><div class="video-copy"><span class="eyebrow"></span><span class="title"></span><span class="time"></span><button class="play" type="button" aria-label="">▶</button></div>`;
+      const preview = card.querySelector(".preview");
+      if (payload.video.thumbnailURL) {
+        const image = document.createElement("img");
+        image.alt = "";
+        image.src = payload.video.thumbnailURL;
+        image.referrerPolicy = "no-referrer";
+        image.addEventListener("error", () => image.remove(), { once: true });
+        preview.append(image);
+      }
+      card.querySelector(".eyebrow").textContent = russian ? "Продолжить просмотр" : "Continue watching";
+      const title = card.querySelector(".title");
+      title.textContent = payload.video.title;
+      title.title = payload.video.title;
+      card.querySelector(".time").textContent = russian
+        ? `Остановлено на ${payload.video.time}`
+        : `Stopped at ${payload.video.time}`;
+      const play = card.querySelector(".play");
+      play.setAttribute("aria-label", russian ? `Продолжить с ${payload.video.time}` : `Resume at ${payload.video.time}`);
+      play.addEventListener("click", () => {
+        chrome.runtime.sendMessage({
+          kind: "openStartupVideo",
+          url: payload.video.url,
+          position: payload.video.position
+        }).catch(() => {});
+        host.remove();
+      });
+      stack.append(card);
+    }
+    (document.documentElement || document).append(host);
+    let remaining = 60_000;
+    let startedAt = Date.now();
+    let timer = setTimeout(() => host.remove(), remaining);
+    const pause = () => {
+      clearTimeout(timer);
+      remaining = Math.max(0, remaining - (Date.now() - startedAt));
+    };
+    const resume = () => {
+      clearTimeout(timer);
+      startedAt = Date.now();
+      timer = setTimeout(() => host.remove(), remaining);
+    };
+    host.addEventListener("pointerenter", pause);
+    host.addEventListener("pointerleave", resume);
+    host.addEventListener("focusin", pause);
+    host.addEventListener("focusout", (event) => {
+      if (!host.contains(event.relatedTarget)) resume();
+    });
+    return true;
+  }
+
   function continueWatchingResumeURL(url, position) {
     try {
       const parsed = new URL(url || location.href, location.href);
@@ -1732,6 +1894,21 @@
     return `${minutes}:${remainder}`;
   }
 
+  function mediaThumbnailURL(video) {
+    const youtubeID = currentYouTubeVideoID();
+    const candidate = youtubeID
+      ? `https://i.ytimg.com/vi/${youtubeID}/hqdefault.jpg`
+      : document.querySelector("meta[property='og:image'], meta[name='twitter:image']")?.content
+        || video.poster
+        || "";
+    try {
+      const parsed = new URL(candidate, location.href);
+      return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : "";
+    } catch {
+      return "";
+    }
+  }
+
   function mediaPresentation(title) {
     const types = structuredMediaTypes().map((value) => value.toLowerCase());
     const params = new URLSearchParams(location.search);
@@ -1768,8 +1945,13 @@
   }
 
   function restoreContinueWatchingPosition(video, position) {
+    let restored = false;
     const apply = () => {
-      if (!video.isConnected || video.ended || video.currentTime >= 5) return;
+      if (restored || !video.isConnected || video.ended) return;
+      if (Math.abs(Number(video.currentTime) - position) <= 2) {
+        restored = true;
+        return;
+      }
       try {
         if (typeof video.fastSeek === "function") video.fastSeek(position);
         else video.currentTime = position;
@@ -1778,11 +1960,10 @@
       }
     };
     apply();
-    const onMediaReady = () => apply();
-    video.addEventListener("loadeddata", onMediaReady, { once: true });
-    video.addEventListener("canplay", onMediaReady, { once: true });
-    setTimeout(apply, 250);
-    setTimeout(apply, 1_000);
+    for (const event of ["loadedmetadata", "durationchange", "loadeddata", "canplay", "playing"]) {
+      video.addEventListener(event, apply, { once: true });
+    }
+    for (const delay of [250, 1_000, 2_500, 5_000]) setTimeout(apply, delay);
   }
 
   async function initializeContinueWatching(video) {
@@ -1798,7 +1979,7 @@
     if (!identity || !video.isConnected) return;
     if (continueWatchingVideos.get(video)?.identity === identity) return;
     const presentation = mediaPresentation(title);
-    const state = { identity, source, lastSavedAt: 0, title, ...presentation };
+    const state = { identity, source, lastSavedAt: 0, title, thumbnailURL: mediaThumbnailURL(video), ...presentation };
     continueWatchingVideos.set(video, state);
     const saved = await chrome.runtime.sendMessage({
       kind: "getContinueWatchingPosition",
@@ -1832,6 +2013,7 @@
       title: state.title,
       episode: state.episode,
       mediaType: state.mediaType,
+      thumbnailURL: state.thumbnailURL,
       pageURL: location.href,
       completed: completed || position >= video.duration - 20
     }).catch(() => {});
@@ -2223,6 +2405,10 @@
     if (message?.kind === "playActivationAnimation") {
       playActivationAnimation();
       sendResponse({ ok: true });
+      return false;
+    }
+    if (message?.kind === "showStartupRecap") {
+      sendResponse({ ok: showStartupRecap(message.payload) });
       return false;
     }
     if (message?.kind === "getPagePrivacySignals") {

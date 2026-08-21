@@ -45,6 +45,14 @@ import {
   normalizeFeaturePreferences,
   siteIsExcluded
 } from "../features/tools/feature-preferences.js";
+import {
+  mostRecentClosedWindow,
+  sanitizeStartupRecap,
+  sanitizeStartupTabs,
+  safeImageURL,
+  safeWebURL,
+  videoResumeURL
+} from "../features/tools/startup-recap.js";
 
 const ALARM_NAME = "collect-browser-snapshot";
 const CUSTOM_FILTER_FIRST_RULE_ID = 630_000;
@@ -64,6 +72,7 @@ const FEATURE_PREFERENCES_KEY = "featurePreferences";
 const BLOCKING_JOURNAL_KEY = "blockingRequestJournal";
 const ONE_RELOAD_BYPASS_KEY = "oneReloadBypassSites";
 const CONTINUE_WATCHING_KEY = "continueWatching";
+const STARTUP_RECAP_KEY = "startupRecap";
 const SPONSOR_CACHE_KEY = "sponsorSegmentCache";
 const SPONSOR_CACHE_LIMIT = 80;
 const SPONSOR_CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
@@ -118,6 +127,7 @@ let blockingStatisticsTimer = null;
 let blockingStatisticsWrite = Promise.resolve();
 let activityStatisticsWrite = Promise.resolve();
 let continueWatchingWrite = Promise.resolve();
+let startupRecapDelivery = Promise.resolve();
 let cryptoGuardCopy = null;
 const privacySessions = new Map();
 let privacySessionsHydration = null;
@@ -631,9 +641,10 @@ function normalizedContinueWatching(input, retentionDays = 90) {
         url = parsed.href.slice(0, 2_048);
       }
     } catch {}
+    const thumbnailURL = safeImageURL(entry?.thumbnailURL);
     const removedParameters = Array.isArray(entry?.removedParameters)
       ? entry.removedParameters.map(String).filter(Boolean).slice(0, 30) : [];
-    return [[identity, { position, duration, updatedAt, title, episode, site, mediaType, url, removedParameters }]];
+    return [[identity, { position, duration, updatedAt, title, episode, site, mediaType, url, thumbnailURL, removedParameters }]];
   }).sort((left, right) => right[1].updatedAt - left[1].updatedAt).slice(0, CONTINUE_WATCHING_LIMIT);
   return { version: 2, entries: Object.fromEntries(entries) };
 }
@@ -656,7 +667,7 @@ async function getContinueWatchingList() {
 }
 
 function setContinueWatchingPosition({
-  identity, position, duration, completed, title, episode, mediaType, pageURL
+  identity, position, duration, completed, title, episode, mediaType, pageURL, thumbnailURL
 }) {
   if (!/^[a-f0-9]{64}$/.test(String(identity ?? ""))) return Promise.resolve({ ok: false });
   continueWatchingWrite = continueWatchingWrite.then(async () => {
@@ -678,6 +689,7 @@ function setContinueWatchingPosition({
         mediaType,
         site,
         url: sanitizedURL.url,
+        thumbnailURL: safeImageURL(thumbnailURL),
         removedParameters: sanitizedURL.removed
       };
     }
@@ -695,6 +707,83 @@ function removeContinueWatchingEntry(identity) {
     await chrome.storage.local.set({ [CONTINUE_WATCHING_KEY]: normalized });
   });
   return continueWatchingWrite.then(() => ({ ok: true }));
+}
+
+function formatStartupPlaybackTime(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(total / 3_600);
+  const minutes = Math.floor((total % 3_600) / 60);
+  const remainder = String(total % 60).padStart(2, "0");
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${remainder}`
+    : `${minutes}:${remainder}`;
+}
+
+async function prepareStartupRecap() {
+  if (!await extensionEnabledStorage()) {
+    await chrome.storage.session.remove(STARTUP_RECAP_KEY);
+    return null;
+  }
+  const [recentlyClosed, openTabs, preferences, storedUI, videos] = await Promise.all([
+    chrome.sessions.getRecentlyClosed({ maxResults: 10 }).catch(() => []),
+    chrome.tabs.query({}).catch(() => []),
+    featurePreferencesStorage(),
+    chrome.storage.local.get({ uiPreferences: { language: null } }),
+    getContinueWatchingList().catch(() => [])
+  ]);
+  const recentWindow = mostRecentClosedWindow(recentlyClosed);
+  const tabs = sanitizeStartupTabs(
+    recentWindow?.window?.tabs,
+    openTabs.map((tab) => tab.url || tab.pendingUrl || "")
+  );
+  const latestVideo = preferences.continueWatchingEnabled !== false ? videos[0] : null;
+  const payload = sanitizeStartupRecap({
+    id: crypto.randomUUID(),
+    createdAt: Date.now(),
+    language: storedUI.uiPreferences?.language
+      || (chrome.i18n.getUILanguage().toLowerCase().startsWith("ru") ? "ru" : "en"),
+    tabs,
+    video: latestVideo ? {
+      title: latestVideo.title,
+      url: latestVideo.url,
+      thumbnailURL: latestVideo.thumbnailURL,
+      position: latestVideo.position,
+      time: formatStartupPlaybackTime(latestVideo.position)
+    } : null
+  });
+  if (payload) await chrome.storage.session.set({ [STARTUP_RECAP_KEY]: payload });
+  else await chrome.storage.session.remove(STARTUP_RECAP_KEY);
+  return payload;
+}
+
+async function deliverStartupRecap(preferredTabId = null) {
+  startupRecapDelivery = startupRecapDelivery.then(async () => {
+    const stored = await chrome.storage.session.get({ [STARTUP_RECAP_KEY]: null });
+    const payload = sanitizeStartupRecap(stored[STARTUP_RECAP_KEY]);
+    if (!payload) {
+      await chrome.storage.session.remove(STARTUP_RECAP_KEY);
+      return false;
+    }
+    let tab = null;
+    if (Number.isInteger(preferredTabId)) {
+      tab = await chrome.tabs.get(preferredTabId).catch(() => null);
+    }
+    if (!tab || !/^https?:/i.test(tab.url || tab.pendingUrl || "")) {
+      [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+    }
+    if (!tab?.id || !/^https?:/i.test(tab.url || tab.pendingUrl || "")) return false;
+    const result = await chrome.tabs.sendMessage(tab.id, { kind: "showStartupRecap", payload }).catch(() => null);
+    if (!result?.ok) return false;
+    await chrome.storage.session.remove(STARTUP_RECAP_KEY);
+    return true;
+  }).catch(() => false);
+  return startupRecapDelivery;
+}
+
+async function openStartupTabs(urls) {
+  const safeURLs = [...new Set((Array.isArray(urls) ? urls : []).map(safeWebURL).filter(Boolean))].slice(0, 12);
+  for (const url of safeURLs) await chrome.tabs.create({ url, active: false });
+  return { ok: true, opened: safeURLs.length };
 }
 
 async function sitePrivacyReceipt(tabId, url) {
@@ -1874,6 +1963,8 @@ chrome.runtime.onStartup.addListener(async () => {
   await chrome.alarms.create(ALARM_NAME, { periodInMinutes: 15 });
   await setupContextMenus();
   await collectSnapshot();
+  await prepareStartupRecap();
+  await deliverStartupRecap();
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -1991,7 +2082,12 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     }
     await syncCosmeticFilteringForTab(tabId, tab.url);
     await notifyHistoryPrivacyDomainsForTab(tabId).catch(() => {});
+    await deliverStartupRecap(tabId);
   }
+});
+
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  deliverStartupRecap(tabId).catch(() => {});
 });
 
 chrome.webRequest.onErrorOccurred.addListener((details) => {
@@ -2113,6 +2209,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(() => sendResponse({}));
     return true;
   }
+  if (message?.kind === "openStartupTabs") {
+    openStartupTabs(message.urls).then(sendResponse).catch(() => sendResponse({ ok: false, opened: 0 }));
+    return true;
+  }
+  if (message?.kind === "openStartupVideo") {
+    const url = videoResumeURL(message.url, Number(message.position));
+    if (!url || !Number.isInteger(sender.tab?.id)) {
+      sendResponse({ ok: false });
+      return false;
+    }
+    chrome.tabs.update(sender.tab.id, { url })
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
   if (message?.kind === "getContinueWatchingList") {
     getContinueWatchingList()
       .then((entries) => sendResponse({ entries }))
@@ -2132,6 +2243,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       title: String(message.title ?? ""),
       episode: String(message.episode ?? ""),
       mediaType: String(message.mediaType ?? ""),
+      thumbnailURL: String(message.thumbnailURL ?? ""),
       pageURL: String(sender.tab?.url ?? message.pageURL ?? "")
     }).then(sendResponse).catch(() => sendResponse({ ok: false }));
     return true;

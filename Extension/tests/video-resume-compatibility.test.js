@@ -39,7 +39,12 @@ const scenarios = [
   ["17 social feed video", { ...player, hostname: "twitter.com", pathname: "/status/42" }, false],
   ["18 generic multi-video feed", { ...player, pathname: "/feed", playerHint: false, videoCount: 8, title: "News" }, false],
   ["19 generic long video without media signals", { ...player, pathname: "/article", playerHint: false, title: "News" }, false],
-  ["20 completed/invalid zero-duration media", { ...player, duration: Number.NaN }, false]
+  ["20 completed/invalid zero-duration media", { ...player, duration: Number.NaN }, false],
+  ["21 YouTube Shorts route", { ...player, hostname: "youtube.com", pathname: "/shorts/abc" }, false],
+  ["22 Twitch stream", { ...player, hostname: "twitch.tv", pathname: "/creator" }, false],
+  ["23 Kick stream", { ...player, hostname: "kick.com", pathname: "/creator" }, false],
+  ["24 Telegram Web video", { ...player, hostname: "web.telegram.org", pathname: "/a/channel" }, false],
+  ["25 vertical short-form video", { ...player, width: 420, height: 740, duration: 300 }, false]
 ];
 
 for (const [name, input, supported] of scenarios) {

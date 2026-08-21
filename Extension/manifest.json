@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Browser Monitor",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "minimum_chrome_version": "120",
   "description": "Analyzes Chrome tabs and provides local ad, tracker, distraction, cookie-banner, and custom element controls.",
   "icons": {
@@ -15,6 +15,7 @@
     "contextMenus",
     "declarativeNetRequest",
     "favicon",
+    "sessions",
     "scripting",
     "storage",
     "tabs",
