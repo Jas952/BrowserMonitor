@@ -30,7 +30,9 @@ Browser Monitor is a local-first Chrome extension that combines content protecti
 - warns before opening suspicious links with local checks for shorteners, lookalike domains, punycode, redirects, and risky social-feed destinations;
 - labels risky search results on popular search engines and lets trusted domains be allowed locally;
 - protects copied wallet addresses against invisible-character tricks and paste substitution attempts;
-- remembers supported long-form videos and shows a local Continue Watching list in the popup;
+- remembers supported long-form videos, reliably restores saved positions, and shows the latest one in a local Continue Watching startup card;
+- offers the tabs from the previous full Chrome session in the same in-page startup card, without opening a separate window or tab until you choose an action;
+- excludes Shorts, short vertical videos, Twitch, Kick, and Telegram Web from long-form video handling;
 - shows a local privacy receipt for the current site on demand;
 - can hide selected domains from local Chrome history and supported search suggestions after explicit history permission;
 - shows live local blocking statistics for today and a rolling seven-day window, including top sites and resources;
