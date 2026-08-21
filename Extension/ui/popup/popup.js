@@ -428,6 +428,8 @@ async function runBookmarkReview() {
   scanBookmarks.disabled = true;
   scanBookmarks.setAttribute("aria-busy", "true");
   scanBookmarks.textContent = t("bookmarkChecking");
+  reviewCount.textContent = "0";
+  reviewEmpty(bookmarkList, "bookmarkStartScan");
   reviewStatus.textContent = "";
   try {
     const permission = await ensureOptionalPermission("bookmarks", "bookmarksPermissionPrompt");
