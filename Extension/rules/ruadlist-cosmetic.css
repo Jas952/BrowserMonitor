@@ -1,3 +1,4 @@
+.AdvRsyaOrganic,div.Root[id*="OrganicBase__"],li.serp-item:has(.AdvRsyaOrganic),li:has(> div.Root[id*="OrganicBase__"]),li.serp-item:has(> .Organic_withAdvLabel),li.serp-item:has(a[href*="yabs.yandex.ru/count/" i]){display:none!important}
 #AF_kph0{display:none!important}
 #AF_kph1{display:none!important}
 #BlWrapper > .b-temp_rbc{display:none!important}

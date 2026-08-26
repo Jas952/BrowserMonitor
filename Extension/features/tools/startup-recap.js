@@ -16,7 +16,7 @@ function safeWebURL(value) {
 function safeImageURL(value) {
   const source = String(value ?? "");
   if (/^data:image\/(?:png|jpeg|jpg|gif|webp|svg\+xml);base64,[a-z0-9+/=]+$/i.test(source)) {
-    return source.length <= 16_384 ? source : "";
+    return source.length <= 32_768 ? source : "";
   }
   return safeWebURL(source);
 }
@@ -59,6 +59,9 @@ export function sanitizeStartupRecap(input, now = Date.now()) {
     id: String(input?.id ?? "").slice(0, 80),
     createdAt,
     language: input?.language === "ru" ? "ru" : "en",
+    targetTabId: Number.isInteger(input?.targetTabId) ? input.targetTabId : null,
+    claimOnNextTab: input?.claimOnNextTab === true,
+    claimAfter: Number.isFinite(Number(input?.claimAfter)) ? Number(input.claimAfter) : 0,
     tabs,
     video: validVideo
   };
@@ -74,6 +77,14 @@ export function videoResumeURL(url, position) {
     parsed.searchParams.set("t", `${seconds}s`);
   }
   return parsed.href;
+}
+
+export function continueWatchingDisposition(position, duration, completed = false) {
+  const current = Number(position);
+  const total = Number(duration);
+  if (completed || (Number.isFinite(current) && Number.isFinite(total) && current >= total - 20)) return "remove";
+  if (Number.isFinite(current) && Number.isFinite(total) && total >= 120 && current >= 10) return "store";
+  return "ignore";
 }
 
 export { MAX_STARTUP_TABS, RECAP_TTL_MS, safeImageURL, safeWebURL };

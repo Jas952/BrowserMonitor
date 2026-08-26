@@ -12,6 +12,17 @@ export function registrableSite(value) {
   }
 }
 
+export function mediaSite(value) {
+  const site = registrableSite(value);
+  return site === "youtu.be" ? "youtube.com" : site;
+}
+
+export function sameMediaSite(mediaURL, pageURL) {
+  const media = mediaSite(mediaURL);
+  const page = mediaSite(pageURL);
+  return Boolean(media && page && media === page);
+}
+
 export function normalizedDuplicateURL(value) {
   try {
     const url = new URL(value);

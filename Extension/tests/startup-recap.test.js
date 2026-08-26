@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  continueWatchingDisposition,
   mostRecentClosedWindow,
   sanitizeStartupRecap,
   sanitizeStartupTabs,
   videoResumeURL
 } from "../features/tools/startup-recap.js";
+
+test("Continue Watching keeps early player events from deleting a valid record", () => {
+  assert.equal(continueWatchingDisposition(0, 900), "ignore");
+  assert.equal(continueWatchingDisposition(9.9, 900), "ignore");
+  assert.equal(continueWatchingDisposition(10, 900), "store");
+  assert.equal(continueWatchingDisposition(881, 900), "remove");
+  assert.equal(continueWatchingDisposition(120, 900, true), "remove");
+});
 
 test("startup recap selects the newest closed window", () => {
   const result = mostRecentClosedWindow([
@@ -33,6 +42,9 @@ test("startup recap expires and sanitizes its video card", () => {
     id: "recap",
     createdAt: now,
     language: "ru",
+    targetTabId: 42,
+    claimOnNextTab: true,
+    claimAfter: now - 25,
     tabs: [],
     video: {
       title: " Last   video ",
@@ -44,10 +56,17 @@ test("startup recap expires and sanitizes its video card", () => {
   }, now);
   assert.equal(recap.video.title, "Last video");
   assert.equal(recap.video.thumbnailURL, "");
+  assert.equal(recap.targetTabId, 42);
+  assert.equal(recap.claimOnNextTab, true);
+  assert.equal(recap.claimAfter, now - 25);
 });
 
 test("YouTube startup resume carries the saved timestamp", () => {
   const result = new URL(videoResumeURL("https://www.youtube.com/watch?v=abc123", 125.8));
   assert.equal(result.searchParams.get("t"), "125s");
+  assert.equal(
+    videoResumeURL("https://video.example/watch?id=1", 125),
+    "https://video.example/watch?id=1"
+  );
   assert.equal(videoResumeURL("javascript:alert(1)", 125), "");
 });

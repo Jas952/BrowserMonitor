@@ -8,8 +8,25 @@ test("Yandex ad cleanup does not hide broad search-page containers", () => {
   assert.equal(source.includes('[data-fast-name*="direct" i]'), false);
   assert.equal(source.includes('[data-zone-name*="direct" i]'), false);
   assert.equal(source.includes('[class*="Direct" i]'), false);
+  assert.match(source, /li\.serp-item:has\(> \.Organic_withAdvLabel\)/);
+  assert.match(source, /li\.serp-item:has\(\.AdvRsyaOrganic\)/);
+  assert.match(source, /div\.Root\[id\*="OrganicBase__"\]/);
+  assert.match(source, /li:has\(> div\.Root\[id\*="OrganicBase__"\]\)/);
+  assert.match(source, /li\.serp-item:has\(a\[href\*="yabs\.yandex\.ru\/count\/" i\]\)/);
+  assert.match(source, /function scanYandexAdCards\(\)/);
+  assert.match(source, /card\.style\.setProperty\("display", "none", "important"\)/);
+  assert.match(source, /function restoreYandexAdCard\(card, originalDisplay\)/);
+  assert.match(source, /attributes: protectionSettings\.adFilterEnabled && isYandexSearchPage\(\)/);
+  assert.match(source, /isYandexSearchPage\(\) \? YANDEX_AD_MARKER_SELECTOR : ""/);
   assert.match(source, /aside:has\(a\[href\*="yabs\.yandex" i\]\)/);
   assert.match(source, /div:has\(> a\[href\*="direct\.yandex" i\]\)/);
+});
+
+test("regional cosmetic filtering hides current Yandex RSYA cards", () => {
+  const regionalCss = readFileSync(new URL("../rules/ruadlist-cosmetic.css", import.meta.url), "utf8");
+  assert.match(regionalCss, /^\.AdvRsyaOrganic,div\.Root\[id\*="OrganicBase__"\],/);
+  assert.match(regionalCss, /li:has\(> div\.Root\[id\*="OrganicBase__"\]\)/);
+  assert.match(regionalCss, /li\.serp-item:has\(> \.Organic_withAdvLabel\)/);
 });
 
 test("Continue Watching notice opens the saved page and reapplies the saved position", () => {

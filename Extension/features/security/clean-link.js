@@ -40,3 +40,30 @@ export function sanitizeStoredMediaURL(rawURL) {
     return { url: "", removed: cleaned.removed };
   }
 }
+
+export function repairStoredMediaURL(rawURL, thumbnailURL = "") {
+  const sanitized = sanitizeStoredMediaURL(rawURL);
+  try {
+    const url = new URL(sanitized.url);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (host !== "youtube.com" || (url.pathname === "/watch" && url.searchParams.get("v"))) {
+      return sanitized;
+    }
+    const thumbnail = new URL(String(thumbnailURL ?? ""));
+    const thumbnailHost = thumbnail.hostname.toLowerCase().replace(/^www\./, "");
+    if (!["i.ytimg.com", "img.youtube.com"].includes(thumbnailHost)) return sanitized;
+    const videoID = thumbnail.pathname.match(/\/vi(?:_webp)?\/([a-z0-9_-]{6,20})(?:\/|$)/i)?.[1];
+    if (!videoID) return sanitized;
+    const repaired = new URL("https://www.youtube.com/watch");
+    repaired.searchParams.set("v", videoID);
+    return { ...sanitized, url: repaired.href };
+  } catch {
+    return sanitized;
+  }
+}
+
+export function preferredMediaPageURL(reportedURL, fallbackURL, { topFrame = true } = {}) {
+  const first = topFrame ? reportedURL : fallbackURL;
+  const second = topFrame ? fallbackURL : reportedURL;
+  return sanitizeStoredMediaURL(first).url || sanitizeStoredMediaURL(second).url;
+}

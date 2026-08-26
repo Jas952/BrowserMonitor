@@ -63,6 +63,19 @@ export function temporaryPauseRules(pauses, firstRuleId = 610_000) {
   return allowlistRules(Object.keys(pauses ?? {}), firstRuleId);
 }
 
+export function youtubePlaybackRules(enabled, firstRuleId = 615_000) {
+  if (!enabled) return [];
+  return [{
+    id: firstRuleId,
+    priority: 15_000,
+    action: { type: "allowAllRequests" },
+    condition: {
+      requestDomains: ["youtube.com"],
+      resourceTypes: ["main_frame"]
+    }
+  }];
+}
+
 export function contentBlockingSnapshot(enabled, updatedAt, statistics = {}) {
   return {
     enabled: Boolean(enabled),
