@@ -1516,7 +1516,9 @@ async function syncCosmeticFilteringForTab(tabId, url) {
     && state.contentBlockingEnabled
     && !state.allowlistedSites.includes(domain)
     && !activePauses[domain];
-  const youtubePlaybackActive = domain === "youtube.com" || domain.endsWith(".youtube.com");
+  const youtubePlaybackActive = (domain === "youtube.com" || domain.endsWith(".youtube.com"))
+    && settings.videoAdProtectionEnabled
+    && !settings.privacyFilterEnabled;
   const styles = [
     ["rules/easylist-cosmetic.css", siteProtectionActive && !youtubePlaybackActive && settings.cosmeticFilteringEnabled],
     ["rules/easylist-cookie-cosmetic.css", siteProtectionActive && settings.cookieBannerBlockingEnabled],

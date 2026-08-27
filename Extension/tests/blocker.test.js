@@ -92,6 +92,11 @@ test("YouTube playback bypass preserves privacy filtering", () => {
   assert.match(serviceWorker, /settings\.videoAdProtectionEnabled\s*&&\s*!settings\.privacyFilterEnabled/);
 });
 
+test("YouTube cosmetic bypass follows video protection setting", () => {
+  const serviceWorker = readFileSync(new URL("../core/service-worker.js", import.meta.url), "utf8");
+  assert.match(serviceWorker, /const youtubePlaybackActive = \(domain === "youtube\.com" \|\| domain\.endsWith\("\.youtube\.com"\)\)\s*&&\s*settings\.videoAdProtectionEnabled\s*&&\s*!settings\.privacyFilterEnabled/);
+});
+
 test("YouTube video protection clicks only the available native skip control", () => {
   const contentScript = readFileSync(new URL("../core/content.js", import.meta.url), "utf8");
   const skipStart = contentScript.indexOf("function clickYouTubeSkipButtons");
