@@ -11,7 +11,8 @@ import {
   contentBlockingSnapshot,
   customBlockRules,
   normalizeSiteDomain,
-  temporaryPauseRules
+  temporaryPauseRules,
+  youtubePlaybackRules
 } from "../features/security/blocker.js";
 
 test("static blocker metadata matches the packaged rules", () => {
@@ -73,6 +74,53 @@ test("temporary pauses keep only active normalized sites", () => {
   assert.equal(rules[0].action.type, "allowAllRequests");
 });
 
+test("YouTube playback remains available while automatic skip is handled in-page", () => {
+  assert.deepEqual(youtubePlaybackRules(false), []);
+  const [rule] = youtubePlaybackRules(true);
+  assert.equal(rule.id, 615_000);
+  assert.equal(rule.priority, 15_000);
+  assert.equal(rule.action.type, "allowAllRequests");
+  assert.deepEqual(rule.condition, {
+    requestDomains: ["youtube.com"],
+    resourceTypes: ["main_frame"]
+  });
+  assert.ok(rule.priority < customBlockRules(["youtube.com"])[0].priority);
+});
+
+test("YouTube playback bypass preserves privacy filtering", () => {
+  const serviceWorker = readFileSync(new URL("../core/service-worker.js", import.meta.url), "utf8");
+  assert.match(serviceWorker, /settings\.videoAdProtectionEnabled\s*&&\s*!settings\.privacyFilterEnabled/);
+});
+
+test("YouTube cosmetic bypass follows video protection setting", () => {
+  const serviceWorker = readFileSync(new URL("../core/service-worker.js", import.meta.url), "utf8");
+  assert.match(serviceWorker, /const youtubePlaybackActive = \(domain === "youtube\.com" \|\| domain\.endsWith\("\.youtube\.com"\)\)\s*&&\s*settings\.videoAdProtectionEnabled\s*&&\s*!settings\.privacyFilterEnabled/);
+});
+
+test("YouTube video protection clicks only the available native skip control", () => {
+  const contentScript = readFileSync(new URL("../core/content.js", import.meta.url), "utf8");
+  const skipStart = contentScript.indexOf("function clickYouTubeSkipButtons");
+  const skipEnd = contentScript.indexOf("function scanVideoAds", skipStart);
+  const skipImplementation = contentScript.slice(skipStart, skipEnd);
+  assert.ok(skipStart > 0 && skipEnd > skipStart);
+  assert.match(skipImplementation, /#movie_player\.ad-showing/);
+  assert.match(skipImplementation, /aria-disabled/);
+  assert.match(skipImplementation, /button\.click\(\)/);
+  assert.doesNotMatch(skipImplementation, /currentTime|playbackRate|display\s*,\s*"none"/);
+  assert.match(contentScript, /if \(isYouTubePage\(\)\) \{\s*clickYouTubeSkipButtons\(\);\s*return;/);
+  assert.match(contentScript, /settings\.videoAdProtectionEnabled && !isYouTubePage\(\)/);
+  assert.doesNotMatch(contentScript, /YOUTUBE_AD_SELECTOR/);
+});
+
+test("Yandex cosmetic cleanup follows the global content-blocking state", () => {
+  const contentScript = readFileSync(new URL("../core/content.js", import.meta.url), "utf8");
+  const scanStart = contentScript.indexOf("function scanYandexAdCards");
+  const scanEnd = contentScript.indexOf("function scheduleProtectionScan", scanStart);
+  const scanImplementation = contentScript.slice(scanStart, scanEnd);
+  assert.ok(scanStart > 0 && scanEnd > scanStart);
+  assert.match(scanImplementation, /!contentBlockingEnabled/);
+});
+
 test("dynamic rules stay inside the reserved Chrome budget", () => {
   const domains = Array.from({ length: 2_500 }, (_, index) => `site-${index}.example`);
   const customDomains = Array.from({ length: 1_200 }, (_, index) => `tracker-${index}.example`);
@@ -85,6 +133,7 @@ test("dynamic rules stay inside the reserved Chrome budget", () => {
   const allowRules = allowlistRules(domains);
   const customRules = customBlockRules(customDomains);
   const pauseRules = temporaryPauseRules(activeTemporaryPauses(pauses, Date.parse("2026-07-14T00:00:00Z")));
+  const youtubeRules = youtubePlaybackRules(true);
 
   assert.equal(allowRules.length, 2_000);
   assert.equal(customRules.length, 1_000);
@@ -95,6 +144,7 @@ test("dynamic rules stay inside the reserved Chrome budget", () => {
     allowRules.length
       + customRules.length
       + pauseRules.length
+      + youtubeRules.length
       + CRYPTO_MINING_RULES.length
       + customSubscriptionReserve
       <= 4_500

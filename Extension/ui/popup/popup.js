@@ -1,6 +1,8 @@
 import { browserLanguage, localizeDocument, translate } from "../../core/localization.js";
 import { withTimeout } from "../../core/async-utils.js";
 import { bookmarkStructureIssues, duplicateGroups as duplicateTabGroups } from "../../features/tools/browser-health.js";
+import { videoResumeURL } from "../../features/tools/startup-recap.js";
+import { visibleTabGroupKey } from "../../features/tools/tab-organizer.js";
 
 const extensionToggle = document.querySelector("#extension-toggle");
 const summary = document.querySelector("#summary");
@@ -48,6 +50,13 @@ const nextTools = document.querySelector("#next-tools");
 const watchHistoryView = document.querySelector("#watch-history-view");
 const watchHistoryList = document.querySelector("#watch-history-list");
 const closeWatchHistory = document.querySelector("#close-watch-history");
+const recentTabsButton = document.querySelector("#recent-tabs-button");
+const clearRecentTabsButton = document.querySelector("#clear-recent-tabs");
+const autoGroupTabsButton = document.querySelector("#auto-group-tabs");
+const tabActionStatus = document.querySelector("#tab-action-status");
+const recentTabsView = document.querySelector("#recent-tabs-view");
+const recentTabsList = document.querySelector("#recent-tabs-list");
+const closeRecentTabs = document.querySelector("#close-recent-tabs");
 const tabActivityView = document.querySelector("#tab-activity-view");
 const previousTabs = document.querySelector("#previous-tabs");
 const nextTabs = document.querySelector("#next-tabs");
@@ -136,8 +145,17 @@ let suppressToolClick = false;
 let toolSnapTimer = null;
 let toolPageAnimationUntil = 0;
 let toolScrollAnimationFrame = 0;
+let toolNavigationAnimationFrame = 0;
+let toolPageOffsets = null;
+let toolTargetPage = 0;
+let watchThumbnailObserver = null;
+let watchThumbnailEntries = new WeakMap();
+let tabGroupRefreshTimer = null;
+let lastTabGroupStateSignature = "";
+let refreshGeneration = 0;
 const t = (key, values) => translate(language, key, values);
 const POPUP_REQUEST_TIMEOUT_MS = 2_500;
+const POPUP_SNAPSHOT_REUSE_MS = 15_000;
 const popupRequest = (message, label = message?.kind ?? "Popup request") => withTimeout(
   chrome.runtime.sendMessage(message),
   POPUP_REQUEST_TIMEOUT_MS,
@@ -213,6 +231,10 @@ function formatObservationTime(seconds) {
 
 function hostname(url) {
   try { return new URL(url).hostname; } catch { return t("currentSite"); }
+}
+
+function localFaviconURL(url) {
+  return chrome.runtime.getURL(`_favicon/?pageUrl=${encodeURIComponent(url)}&size=32`);
 }
 
 async function openExtensionTab(url) {
@@ -504,14 +526,16 @@ function orderedToolButtons() {
 const TOOLS_PER_PAGE = 4;
 
 function toolPageTargets() {
+  if (toolPageOffsets) return toolPageOffsets;
   const buttons = orderedToolButtons();
   const pageCount = Math.max(1, Math.ceil(buttons.length / TOOLS_PER_PAGE));
   const maxScroll = Math.max(0, toolStrip.scrollWidth - toolStrip.clientWidth);
   const origin = buttons[0]?.offsetLeft ?? 0;
-  return Array.from(
+  toolPageOffsets = Array.from(
     { length: pageCount },
     (_, index) => Math.min((buttons[index * TOOLS_PER_PAGE]?.offsetLeft ?? origin) - origin, maxScroll)
   );
+  return toolPageOffsets;
 }
 
 function nearestToolPage() {
@@ -522,8 +546,7 @@ function nearestToolPage() {
   );
 }
 
-function updateToolNavigation() {
-  const page = nearestToolPage();
+function updateToolNavigation(page = nearestToolPage()) {
   const lastPage = toolPageTargets().length - 1;
   previousTools.disabled = page <= 0;
   nextTools.disabled = page >= lastPage;
@@ -531,20 +554,29 @@ function updateToolNavigation() {
 
 function scrollToToolPage(page, behavior = "smooth") {
   const targets = toolPageTargets();
-  const target = targets[Math.max(0, Math.min(page, targets.length - 1))] ?? 0;
+  toolTargetPage = Math.max(0, Math.min(page, targets.length - 1));
+  const target = targets[toolTargetPage] ?? 0;
   clearTimeout(toolSnapTimer);
   cancelAnimationFrame(toolScrollAnimationFrame);
+  updateToolNavigation(toolTargetPage);
   if (behavior !== "smooth") {
     toolPageAnimationUntil = 0;
     toolStrip.scrollTo({ left: target, behavior });
-    updateToolNavigation();
+    toolStrip.classList.remove("programmatic-scroll");
     return;
   }
   const start = toolStrip.scrollLeft;
   const delta = target - start;
-  const duration = 360;
+  if (Math.abs(delta) < 1) {
+    toolPageAnimationUntil = 0;
+    toolStrip.scrollLeft = target;
+    toolStrip.classList.remove("programmatic-scroll");
+    return;
+  }
+  const duration = 220;
   const started = performance.now();
   toolPageAnimationUntil = Date.now() + duration + 80;
+  toolStrip.classList.add("programmatic-scroll");
   const step = (now) => {
     const progress = Math.min(1, (now - started) / duration);
     const eased = 1 - Math.pow(1 - progress, 3);
@@ -554,7 +586,8 @@ function scrollToToolPage(page, behavior = "smooth") {
     } else {
       toolScrollAnimationFrame = 0;
       toolStrip.scrollLeft = target;
-      updateToolNavigation();
+      toolPageAnimationUntil = 0;
+      toolStrip.classList.remove("programmatic-scroll");
     }
   };
   toolScrollAnimationFrame = requestAnimationFrame(step);
@@ -569,7 +602,9 @@ function updateToolLayout() {
   const lastPageStart = (buttons[(pageCount - 1) * TOOLS_PER_PAGE]?.offsetLeft ?? origin) - origin;
   const tailSpace = Math.max(0, lastPageStart + toolStrip.clientWidth - toolStrip.scrollWidth);
   toolStrip.style.setProperty("--tool-tail-space", `${tailSpace}px`);
-  updateToolNavigation();
+  toolPageOffsets = null;
+  toolTargetPage = nearestToolPage();
+  updateToolNavigation(toolTargetPage);
 }
 
 function scheduleToolSnap() {
@@ -676,10 +711,70 @@ toolStrip.addEventListener("click", (event) => {
 }, true);
 
 function closeWatchHistoryView() {
+  watchThumbnailObserver?.disconnect();
   watchHistoryView.hidden = true;
   tabActivityView.hidden = false;
   watchHistoryButton.classList.remove("active");
   watchHistoryButton.setAttribute("aria-pressed", "false");
+}
+
+function closeRecentTabsView() {
+  recentTabsView.hidden = true;
+  tabActivityView.hidden = false;
+  recentTabsButton.classList.remove("active");
+  recentTabsButton.setAttribute("aria-pressed", "false");
+}
+
+function renderRecentTabs(tabs = []) {
+  recentTabsList.replaceChildren();
+  clearRecentTabsButton.disabled = tabs.length === 0;
+  if (!tabs.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = t("recentTabsEmpty");
+    recentTabsList.append(empty);
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  for (const tab of tabs) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "recent-tab-item";
+    item.title = tab.title;
+    const icon = document.createElement("img");
+    icon.className = "recent-tab-favicon";
+    icon.alt = "";
+    icon.src = tab.faviconURL || localFaviconURL(tab.url);
+    const copy = document.createElement("span");
+    copy.className = "recent-tab-copy";
+    const title = document.createElement("strong");
+    title.textContent = tab.title;
+    const host = document.createElement("small");
+    host.textContent = hostname(tab.url);
+    copy.append(title, host);
+    item.append(icon, copy);
+    item.addEventListener("click", async () => {
+      await chrome.tabs.create({ url: tab.url, active: true });
+      window.close();
+    });
+    fragment.append(item);
+  }
+  recentTabsList.append(fragment);
+}
+
+async function openRecentTabsView() {
+  closeWatchHistoryView();
+  tabActivityView.hidden = true;
+  recentTabsView.hidden = false;
+  recentTabsButton.classList.add("active");
+  recentTabsButton.setAttribute("aria-pressed", "true");
+  recentTabsList.replaceChildren();
+  const loading = document.createElement("div");
+  loading.className = "empty";
+  loading.textContent = t("recentTabsLoading");
+  recentTabsList.append(loading);
+  const result = await chrome.runtime.sendMessage({ kind: "getRecentClosedTabs" }).catch(() => ({ tabs: [] }));
+  if (!recentTabsView.hidden) renderRecentTabs(result?.tabs ?? []);
 }
 
 function watchHistoryIcon(mediaType) {
@@ -692,7 +787,53 @@ function watchHistoryIcon(mediaType) {
   return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="2"/><path d="m10 9 5 3-5 3V9Z"/></svg>';
 }
 
+async function loadWatchThumbnail(preview, entry) {
+  if (!preview?.isConnected || !entry?.thumbnailURL || preview.dataset.loading === "true") return;
+  preview.dataset.loading = "true";
+  try {
+    const result = await withTimeout(
+      chrome.runtime.sendMessage({ kind: "getThumbnailImage", url: entry.thumbnailURL }),
+      6_000,
+      "Video thumbnail"
+    );
+    const mime = String(result?.image?.mime || "");
+    const base64 = String(result?.image?.base64 || "");
+    if (!/^image\/(?:avif|gif|jpe?g|png|webp)$/i.test(mime) || !/^[a-z0-9+/=]+$/i.test(base64) || !preview.isConnected) return;
+    const image = document.createElement("img");
+    image.className = "watch-thumbnail";
+    image.alt = "";
+    image.src = `data:${mime};base64,${base64}`;
+    preview.replaceChildren(image);
+    preview.dataset.loaded = "true";
+  } catch {
+    preview.dataset.failed = "true";
+  } finally {
+    delete preview.dataset.loading;
+  }
+}
+
+function observeWatchThumbnail(preview, entry) {
+  if (!entry.thumbnailURL) return;
+  watchThumbnailEntries.set(preview, entry);
+  if (!("IntersectionObserver" in globalThis)) {
+    void loadWatchThumbnail(preview, entry);
+    return;
+  }
+  if (!watchThumbnailObserver) {
+    watchThumbnailObserver = new IntersectionObserver((observations) => {
+      for (const observation of observations) {
+        if (!observation.isIntersecting) continue;
+        watchThumbnailObserver.unobserve(observation.target);
+        void loadWatchThumbnail(observation.target, watchThumbnailEntries.get(observation.target));
+      }
+    }, { root: watchHistoryList, rootMargin: "80px 0px" });
+  }
+  watchThumbnailObserver.observe(preview);
+}
+
 function renderWatchHistory(entries = []) {
+  watchThumbnailObserver?.disconnect();
+  watchThumbnailEntries = new WeakMap();
   watchHistoryList.replaceChildren();
   if (entries.length === 0) {
     const empty = document.createElement("div");
@@ -708,9 +849,13 @@ function renderWatchHistory(entries = []) {
     item.dataset.mediaType = entry.mediaType;
     item.title = t("watchHistoryOpen", { site: entry.site });
 
+    const preview = document.createElement("span");
+    preview.className = "watch-preview";
     const kind = document.createElement("span");
     kind.className = "watch-kind";
     kind.innerHTML = watchHistoryIcon(entry.mediaType);
+    preview.append(kind);
+    observeWatchThumbnail(preview, entry);
 
     const copy = document.createElement("span");
     copy.className = "watch-copy";
@@ -744,9 +889,9 @@ function renderWatchHistory(entries = []) {
       await chrome.runtime.sendMessage({ kind: "removeContinueWatchingEntry", identity: entry.identity });
       await openWatchHistoryView();
     });
-    item.append(kind, copy, time, remove);
+    item.append(preview, copy, time, remove);
     item.addEventListener("click", async () => {
-      await chrome.tabs.create({ url: entry.url, active: true });
+      await chrome.tabs.create({ url: videoResumeURL(entry.url, entry.position), active: true });
       window.close();
     });
     watchHistoryList.append(item);
@@ -831,10 +976,11 @@ function renderSnapshot(snapshot) {
     ? t("tabsSummary", { tabs: tabsLabel, attention: attentionLabel })
     : t("analysisPaused");
   tabsCount.textContent = snapshot.tabs.length;
-  hostStatus.textContent = t("extensionOnly");
+  hostStatus.textContent = t("extensionVersion", { version: chrome.runtime.getManifest().version });
   if (snapshot.stale || snapshot.error) summary.textContent = t("dataTemporarilyUnavailable");
 
   list.replaceChildren();
+  autoGroupTabsButton.disabled = snapshot.tabs.length === 0 || !activeTab?.windowId;
   moreTabs.hidden = true;
   tabsCount.hidden = false;
   if (snapshot.tabs.length === 0) {
@@ -847,16 +993,40 @@ function renderSnapshot(snapshot) {
     return;
   }
 
-  const pageCount = Math.max(1, Math.ceil(snapshot.tabs.length / MAX_VISIBLE_TABS));
+  const hasNamedGroups = snapshot.tabs.some((tab) => visibleTabGroupKey(tab));
+  const displayTabs = hasNamedGroups ? [...snapshot.tabs] : snapshot.tabs;
+  if (hasNamedGroups) {
+    const windowOrder = new Map();
+    for (const tab of snapshot.tabs) {
+      if (!windowOrder.has(tab.windowId)) windowOrder.set(tab.windowId, windowOrder.size);
+    }
+    displayTabs.sort((left, right) => (windowOrder.get(left.windowId) - windowOrder.get(right.windowId))
+      || (Number(left.tabIndex) - Number(right.tabIndex)));
+  }
+  const pageCount = Math.max(1, Math.ceil(displayTabs.length / MAX_VISIBLE_TABS));
   tabPage = Math.min(tabPage, pageCount - 1);
   const pageStart = tabPage * MAX_VISIBLE_TABS;
-  const visibleTabs = snapshot.tabs.slice(pageStart, pageStart + MAX_VISIBLE_TABS);
-  for (const tab of visibleTabs) {
+  const visibleTabs = displayTabs.slice(pageStart, pageStart + MAX_VISIBLE_TABS);
+  const groupCounts = new Map();
+  for (const tab of displayTabs) {
+    const key = visibleTabGroupKey(tab);
+    if (!key) continue;
+    groupCounts.set(key, (groupCounts.get(key) ?? 0) + 1);
+  }
+
+  const createTabRow = (tab) => {
     const row = document.createElement("div");
     row.className = `tab ${tab.severity}`;
+    row.dataset.tabId = String(tab.tabId);
+    row.classList.toggle("pinned", tab.pinned === true);
 
     const dot = document.createElement("span");
     dot.className = "dot";
+
+    const icon = document.createElement("img");
+    icon.className = "activity-tab-favicon";
+    icon.alt = "";
+    icon.src = localFaviconURL(tab.url);
 
     const text = document.createElement("button");
     text.type = "button";
@@ -870,10 +1040,49 @@ function renderSnapshot(snapshot) {
     reason.textContent = localizePerformanceText(tab.reasons?.[0] ?? t("noSignificantLoad"));
     text.append(title, reason);
     text.addEventListener("click", () => showTabDetails(tab));
+    text.draggable = !tab.pinned;
+    if (!tab.pinned) {
+      text.title = t("dragTabToGroup");
+      text.addEventListener("dragstart", (event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/x-browser-monitor-tab", String(tab.tabId));
+        event.dataTransfer.setData("text/plain", String(tab.tabId));
+        row.classList.add("dragging");
+      });
+      text.addEventListener("dragend", () => row.classList.remove("dragging"));
+    }
 
     const score = document.createElement("div");
     score.className = `load-state ${tab.severity}`;
     score.textContent = t(`severity${tab.severity[0].toUpperCase()}${tab.severity.slice(1)}`);
+
+    const pinButton = document.createElement("button");
+    pinButton.type = "button";
+    pinButton.className = `tab-pin-button${tab.pinned ? " pinned" : ""}`;
+    pinButton.title = t(tab.pinned ? "unpinTab" : "pinTab");
+    pinButton.setAttribute("aria-label", pinButton.title);
+    if (tab.pinned) {
+      pinButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 4 6 0-.8 5 3.3 3.3v1.2h-5v5L11 20v-6.5H6.5v-1.2L9.8 9 9 4Z"/></svg>';
+    } else {
+      pinButton.textContent = "Pin";
+    }
+    pinButton.addEventListener("click", async () => {
+      pinButton.disabled = true;
+      tabActionStatus.textContent = t(tab.pinned ? "unpinningTab" : "pinningTab");
+      try {
+        const updated = await popupRequest({
+          kind: "setTabPinned",
+          tabId: tab.tabId,
+          pinned: !tab.pinned
+        }, "Pin tab");
+        if (updated?.error) throw new Error(updated.error);
+        applyTabGroupState(updated.groupState);
+        tabActionStatus.textContent = t(tab.pinned ? "tabUnpinned" : "tabPinned");
+      } catch {
+        pinButton.disabled = false;
+        tabActionStatus.textContent = t("tabPinFailed");
+      }
+    });
 
     const ecoButton = document.createElement("button");
     ecoButton.className = `eco-button${tab.ecoModeEnabled ? " active" : ""}`;
@@ -890,8 +1099,211 @@ function renderSnapshot(snapshot) {
       });
       renderSnapshot(updated);
     });
-    row.append(dot, text, score, ecoButton);
-    list.append(row);
+    row.append(dot, icon, text, score, pinButton, ecoButton);
+    return row;
+  };
+
+  const buckets = [];
+  const bucketByKey = new Map();
+  for (const tab of visibleTabs) {
+    const key = visibleTabGroupKey(tab);
+    if (!key) {
+      buckets.push({ key: null, tabs: [tab] });
+      continue;
+    }
+    let bucket = bucketByKey.get(key);
+    if (!bucket) {
+      bucket = { key, groupId: Number(tab.groupId), tabs: [], title: tab.groupTitle.trim(), color: tab.groupColor };
+      bucketByKey.set(key, bucket);
+      buckets.push(bucket);
+    }
+    bucket.tabs.push(tab);
+  }
+
+  for (const bucket of buckets) {
+    if (!bucket.key) {
+      list.append(createTabRow(bucket.tabs[0]));
+      continue;
+    }
+    const folder = document.createElement("details");
+    folder.className = "tab-folder";
+    folder.dataset.color = "accent";
+    folder.open = true;
+    const heading = document.createElement("summary");
+    heading.className = "tab-folder-heading";
+    heading.draggable = true;
+    heading.title = t("dragTabGroup");
+    const folderIcon = document.createElement("span");
+    folderIcon.className = "tab-folder-icon";
+    folderIcon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5h6l1.5 2h10v9h-17v-11Z"/></svg>';
+    const folderTitle = document.createElement("strong");
+    folderTitle.textContent = bucket.title;
+    const renameButton = document.createElement("button");
+    renameButton.type = "button";
+    renameButton.className = "tab-folder-rename";
+    renameButton.title = t("renameTabGroup");
+    renameButton.setAttribute("aria-label", renameButton.title);
+    renameButton.draggable = false;
+    renameButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 16-.8 3.8L8 19l10-10-3-3L5 16Z"/><path d="m13.5 7.5 3 3"/></svg>';
+    const ungroupButton = document.createElement("button");
+    ungroupButton.type = "button";
+    ungroupButton.className = "tab-folder-ungroup";
+    ungroupButton.title = t("ungroupTabGroup");
+    ungroupButton.setAttribute("aria-label", ungroupButton.title);
+    ungroupButton.draggable = false;
+    ungroupButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5h6l1.5 2h10v9h-17v-11Z"/><path d="M8 14h8"/></svg>';
+    const folderCount = document.createElement("span");
+    folderCount.className = "tab-folder-count";
+    folderCount.textContent = String(groupCounts.get(bucket.key) ?? bucket.tabs.length);
+    heading.append(folderIcon, folderTitle, renameButton, ungroupButton, folderCount);
+    for (const actionButton of [renameButton, ungroupButton]) {
+      actionButton.addEventListener("pointerdown", (event) => event.stopPropagation());
+      actionButton.addEventListener("mousedown", (event) => event.stopPropagation());
+    }
+    const body = document.createElement("div");
+    body.className = "tab-folder-body";
+    body.replaceChildren(...bucket.tabs.map(createTabRow));
+    const clearFolderDropState = () => folder.classList.remove("drag-over", "group-drop-before", "group-drop-after");
+    heading.addEventListener("dragstart", (event) => {
+      if (event.target.closest("button, input")) {
+        event.preventDefault();
+        return;
+      }
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("application/x-browser-monitor-group", String(bucket.groupId));
+      event.dataTransfer.setData("text/plain", String(bucket.groupId));
+      folder.classList.add("group-dragging");
+    });
+    heading.addEventListener("dragend", () => {
+      folder.classList.remove("group-dragging");
+      list.querySelectorAll(".tab-folder").forEach((candidate) => candidate.classList.remove("group-drop-before", "group-drop-after"));
+    });
+    const acceptDraggedTab = async (event) => {
+      event.preventDefault();
+      clearFolderDropState();
+      const tabId = Number(event.dataTransfer.getData("application/x-browser-monitor-tab") || event.dataTransfer.getData("text/plain"));
+      if (!Number.isInteger(tabId) || bucket.tabs.some((tab) => tab.tabId === tabId)) return;
+      tabActionStatus.textContent = t("movingTab");
+      try {
+        const updated = await popupRequest({ kind: "moveTabToGroup", tabId, groupId: bucket.groupId }, "Move tab to group");
+        if (updated?.error) throw new Error(updated.error);
+        applyTabGroupState(updated.groupState);
+        tabActionStatus.textContent = t("tabMoved");
+      } catch {
+        tabActionStatus.textContent = t("tabMoveFailed");
+      }
+    };
+    const acceptDraggedGroup = async (event) => {
+      event.preventDefault();
+      const sourceGroupId = Number(event.dataTransfer.getData("application/x-browser-monitor-group") || event.dataTransfer.getData("text/plain"));
+      const placement = folder.classList.contains("group-drop-after") ? "after" : "before";
+      clearFolderDropState();
+      if (!Number.isInteger(sourceGroupId) || sourceGroupId === bucket.groupId) return;
+      tabActionStatus.textContent = t("movingTabGroup");
+      try {
+        const updated = await popupRequest({
+          kind: "moveTabGroup",
+          groupId: sourceGroupId,
+          targetGroupId: bucket.groupId,
+          placement
+        }, "Move tab group");
+        if (updated?.error) throw new Error(updated.error);
+        applyTabGroupState(updated.groupState);
+        tabActionStatus.textContent = t("tabGroupMoved");
+      } catch {
+        tabActionStatus.textContent = t("tabGroupMoveFailed");
+      }
+    };
+    folder.addEventListener("dragover", (event) => {
+      const types = Array.from(event.dataTransfer.types || []);
+      if (types.includes("application/x-browser-monitor-group")) {
+        const sourceGroupId = Number(event.dataTransfer.getData("application/x-browser-monitor-group"));
+        if (sourceGroupId === bucket.groupId) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        const placement = event.clientY < folder.getBoundingClientRect().top + folder.getBoundingClientRect().height / 2
+          ? "group-drop-before"
+          : "group-drop-after";
+        folder.classList.remove("group-drop-before", "group-drop-after", "drag-over");
+        folder.classList.add(placement);
+        return;
+      }
+      if (!types.includes("application/x-browser-monitor-tab")) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      folder.classList.remove("group-drop-before", "group-drop-after");
+      folder.classList.add("drag-over");
+    });
+    folder.addEventListener("dragleave", (event) => {
+      if (!folder.contains(event.relatedTarget)) clearFolderDropState();
+    });
+    folder.addEventListener("drop", (event) => {
+      const types = Array.from(event.dataTransfer.types || []);
+      if (types.includes("application/x-browser-monitor-group")) void acceptDraggedGroup(event);
+      else if (types.includes("application/x-browser-monitor-tab")) void acceptDraggedTab(event);
+    });
+    renameButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (heading.querySelector(".tab-folder-name-input")) return;
+      const input = document.createElement("input");
+      input.className = "tab-folder-name-input";
+      input.value = bucket.title;
+      input.maxLength = 80;
+      input.setAttribute("aria-label", t("tabGroupName"));
+      folderTitle.replaceWith(input);
+      input.focus();
+      input.select();
+      let finished = false;
+      const finishRename = async (save) => {
+        if (finished) return;
+        finished = true;
+        const nextTitle = input.value.trim();
+        if (!save || !nextTitle || nextTitle === bucket.title) {
+          input.replaceWith(folderTitle);
+          return;
+        }
+        tabActionStatus.textContent = t("renamingTabGroup");
+        try {
+          const updated = await popupRequest({ kind: "renameTabGroup", groupId: bucket.groupId, title: nextTitle }, "Rename tab group");
+          if (updated?.error) throw new Error(updated.error);
+          applyTabGroupState(updated.groupState);
+          tabActionStatus.textContent = t("tabGroupRenamed");
+        } catch {
+          input.replaceWith(folderTitle);
+          tabActionStatus.textContent = t("tabGroupRenameFailed");
+        }
+      };
+      input.addEventListener("click", (inputEvent) => inputEvent.stopPropagation());
+      input.addEventListener("keydown", (inputEvent) => {
+        inputEvent.stopPropagation();
+        if (inputEvent.key === "Enter") {
+          inputEvent.preventDefault();
+          void finishRename(true);
+        } else if (inputEvent.key === "Escape") {
+          inputEvent.preventDefault();
+          void finishRename(false);
+        }
+      });
+      input.addEventListener("blur", () => void finishRename(true));
+    });
+    ungroupButton.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      ungroupButton.disabled = true;
+      tabActionStatus.textContent = t("ungroupingTabGroup");
+      try {
+        const updated = await popupRequest({ kind: "ungroupTabGroup", groupId: bucket.groupId }, "Dissolve tab group");
+        if (updated?.error) throw new Error(updated.error);
+        applyTabGroupState(updated.groupState);
+        tabActionStatus.textContent = t("tabGroupUngrouped");
+      } catch {
+        ungroupButton.disabled = false;
+        tabActionStatus.textContent = t("tabGroupUngroupFailed");
+      }
+    });
+    folder.append(heading, body);
+    list.append(folder);
   }
 
   if (pageCount > 1) {
@@ -901,6 +1313,51 @@ function renderSnapshot(snapshot) {
     nextTabs.disabled = tabPage === pageCount - 1;
     tabPageLabel.textContent = `${tabPage + 1} / ${pageCount}`;
   }
+}
+
+function applyTabGroupState(groupState) {
+  if (!latestSnapshot || !Array.isArray(groupState?.tabs)) throw new TypeError("Invalid tab group state");
+  if (latestSnapshot.monitoringActive === false) return;
+  const signature = JSON.stringify(groupState.tabs.map((tab) => [
+    tab.tabId,
+    tab.windowId,
+    tab.tabIndex,
+    tab.groupId,
+    tab.groupTitle,
+    tab.groupColor,
+    tab.groupCollapsed,
+    tab.pinned,
+    tab.title,
+    tab.url,
+    tab.active,
+    tab.audible
+  ]));
+  if (signature === lastTabGroupStateSignature) return;
+  lastTabGroupStateSignature = signature;
+  const groupTabs = new Map(groupState.tabs.map((tab) => [Number(tab.tabId), tab]));
+  const mergedTabs = latestSnapshot.tabs
+    .filter((tab) => groupTabs.has(Number(tab.tabId)))
+    .map((tab) => ({ ...tab, ...groupTabs.get(Number(tab.tabId)) }));
+  const existingIds = new Set(mergedTabs.map((tab) => Number(tab.tabId)));
+  for (const tab of groupState.tabs) {
+    if (existingIds.has(Number(tab.tabId))) continue;
+    mergedTabs.push({
+      ...tab,
+      severity: "normal",
+      score: 0,
+      reasons: [],
+      metrics: {},
+      recentMetrics: null,
+      recentAssessment: { severity: "normal", score: 0, reasons: [] },
+      visibility: tab.active ? "visible" : "unavailable",
+      measuredAt: groupState.generatedAt,
+      ecoModeEnabled: false,
+      ecoModeLevel: null,
+      ecoRestoreStatus: null,
+      sponsorBlockStatus: null
+    });
+  }
+  renderSnapshot({ ...latestSnapshot, generatedAt: groupState.generatedAt, tabs: mergedTabs });
 }
 
 function showTabDetails(tab) {
@@ -1228,15 +1685,33 @@ async function refreshPictureInPictureState() {
           ? (state.mediaElementCount === 1 ? t("videoFoundOne") : t("videoFoundMany", { count: state.mediaElementCount }))
           : t("noVideoFound"));
     toolStrip.prepend(state.mediaElementCount > 0 || state.active ? pipButton : cookiesButton);
-    updateToolNavigation();
+    updateToolLayout();
   } catch {
     pipButton.disabled = true;
     pipStatus.textContent = t("reloadAfterInstall");
   }
 }
 
-async function refresh() {
+async function refresh({ cachedFirst = false } = {}) {
+  const generation = ++refreshGeneration;
   refreshButton.disabled = true;
+  let initialSnapshotRendered = false;
+  let cachedSnapshotIsFresh = false;
+  const refreshCurrentState = async () => {
+    try {
+      const snapshot = await popupRequest({ kind: "collectNow" }, "Tab snapshot");
+      if (generation === refreshGeneration) renderSnapshot(snapshot);
+    } catch {
+      if (!initialSnapshotRendered && !latestSnapshot) renderLoadFailure();
+    }
+    await Promise.allSettled([
+      refreshProtection(),
+      refreshPictureInPictureState(),
+      refreshPrivacyReceipt(),
+      refreshSiteDataCleanup()
+    ]);
+  };
+
   try {
     try {
       await refreshActiveTab();
@@ -1245,21 +1720,73 @@ async function refresh() {
       cookiesButton.disabled = true;
       blockElementButton.disabled = true;
     }
-    try {
-      renderSnapshot(await popupRequest({ kind: "collectNow" }, "Tab snapshot"));
-    } catch {
-      renderLoadFailure();
+
+    if (cachedFirst) {
+      const [storedResult, groupResult] = await Promise.allSettled([
+        chrome.storage.local.get({ latestSnapshot: null }),
+        popupRequest({ kind: "getTabGroupState" }, "Current tab state")
+      ]);
+      const cachedSnapshot = storedResult.status === "fulfilled" ? storedResult.value.latestSnapshot : null;
+      if (cachedSnapshot && Array.isArray(cachedSnapshot.tabs)) {
+        renderSnapshot(cachedSnapshot);
+        initialSnapshotRendered = true;
+        if (groupResult.status === "fulfilled" && !groupResult.value?.error) {
+          applyTabGroupState(groupResult.value);
+          cachedSnapshotIsFresh = latestSnapshot.tabs.length > 0
+            && Date.now() - Date.parse(cachedSnapshot.generatedAt) <= POPUP_SNAPSHOT_REUSE_MS;
+        }
+      }
     }
-    await Promise.allSettled([
-      refreshProtection(),
-      refreshPictureInPictureState(),
-      refreshPrivacyReceipt(),
-      refreshSiteDataCleanup()
-    ]);
+
+    if (initialSnapshotRendered) {
+      if (cachedSnapshotIsFresh) {
+        void Promise.allSettled([
+          refreshProtection(),
+          refreshPictureInPictureState(),
+          refreshPrivacyReceipt(),
+          refreshSiteDataCleanup()
+        ]).finally(() => {
+          if (generation === refreshGeneration) refreshButton.disabled = false;
+        });
+        return;
+      }
+      setTimeout(() => {
+        void refreshCurrentState().finally(() => {
+          if (generation === refreshGeneration) refreshButton.disabled = false;
+        });
+      }, 150);
+      return;
+    }
+
+    await refreshCurrentState();
   } finally {
-    refreshButton.disabled = false;
+    if (!initialSnapshotRendered && generation === refreshGeneration) refreshButton.disabled = false;
   }
 }
+
+function scheduleTabGroupRefresh() {
+  if (!latestSnapshot) return;
+  clearTimeout(tabGroupRefreshTimer);
+  tabGroupRefreshTimer = setTimeout(async () => {
+    try {
+      const groupState = await popupRequest({ kind: "getTabGroupState" }, "Sync Chrome tab groups");
+      if (groupState?.error) throw new Error(groupState.error);
+      applyTabGroupState(groupState);
+    } catch {
+      // The regular Refresh action remains available if Chrome closes the popup mid-sync.
+    }
+  }, 120);
+}
+
+for (const event of [chrome.tabGroups?.onCreated, chrome.tabGroups?.onUpdated, chrome.tabGroups?.onMoved, chrome.tabGroups?.onRemoved]) {
+  event?.addListener(scheduleTabGroupRefresh);
+}
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
+  if (Object.prototype.hasOwnProperty.call(changeInfo, "groupId")) scheduleTabGroupRefresh();
+});
+chrome.tabs.onMoved.addListener(scheduleTabGroupRefresh);
+chrome.tabs.onAttached.addListener(scheduleTabGroupRefresh);
+chrome.tabs.onDetached.addListener(scheduleTabGroupRefresh);
 
 async function playActivationAnimationInActiveTab() {
   if (typeof activeTab?.id !== "number" || !/^https?:/.test(activeTab.url ?? "")) return false;
@@ -1522,32 +2049,73 @@ saveStale.addEventListener("click", async () => {
 });
 scanBookmarks.addEventListener("click", runBookmarkReview);
 watchHistoryButton.addEventListener("click", () => {
+  closeRecentTabsView();
   if (watchHistoryView.hidden) void openWatchHistoryView();
   else closeWatchHistoryView();
 });
 closeWatchHistory.addEventListener("click", closeWatchHistoryView);
+recentTabsButton.addEventListener("click", () => {
+  if (recentTabsView.hidden) void openRecentTabsView();
+  else closeRecentTabsView();
+});
+autoGroupTabsButton.addEventListener("click", async () => {
+  autoGroupTabsButton.disabled = true;
+  tabActionStatus.textContent = t("groupingTabs");
+  try {
+    const result = await popupRequest({
+      kind: "organizeCurrentWindowTabs",
+      windowId: activeTab?.windowId,
+      language
+    }, "Group tabs");
+    if (result?.error || !result?.snapshot) throw new Error(result?.error || "Tabs could not be grouped");
+    tabPage = 0;
+    renderSnapshot(result.snapshot);
+    autoGroupTabsButton.classList.add("active");
+    tabActionStatus.textContent = result.groupedTabCount
+      ? t("tabsGrouped", { tabs: result.groupedTabCount, groups: result.groupCount })
+      : t("noTabsToGroup");
+    setTimeout(() => autoGroupTabsButton.classList.remove("active"), 1_200);
+  } catch {
+    tabActionStatus.textContent = t("tabGroupingFailed");
+  } finally {
+    autoGroupTabsButton.disabled = !latestSnapshot?.tabs?.length || !activeTab?.windowId;
+  }
+});
+closeRecentTabs.addEventListener("click", closeRecentTabsView);
+clearRecentTabsButton.addEventListener("click", async () => {
+  clearRecentTabsButton.disabled = true;
+  const result = await chrome.runtime.sendMessage({ kind: "clearRecentClosedTabs" }).catch(() => ({ ok: false }));
+  if (result?.ok && !recentTabsView.hidden) renderRecentTabs([]);
+  else if (!result?.ok) clearRecentTabsButton.disabled = false;
+});
 function scrollToolsWithWheel(event) {
   if (toolStrip.scrollWidth <= toolStrip.clientWidth) return;
   if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
   event.preventDefault();
   if (Math.abs(event.deltaY) < 2 || Date.now() < toolPageAnimationUntil) return;
-  scrollToToolPage(nearestToolPage() + Math.sign(event.deltaY));
+  scrollToToolPage(toolTargetPage + Math.sign(event.deltaY));
 }
 
 toolStrip.addEventListener("wheel", scrollToolsWithWheel, { passive: false });
 toolStrip.addEventListener("scroll", () => {
-  updateToolNavigation();
-  if (!toolDrag?.moved && Date.now() >= toolPageAnimationUntil) scheduleToolSnap();
+  if (Date.now() < toolPageAnimationUntil || toolNavigationAnimationFrame) return;
+  toolNavigationAnimationFrame = requestAnimationFrame(() => {
+    toolNavigationAnimationFrame = 0;
+    toolTargetPage = nearestToolPage();
+    updateToolNavigation(toolTargetPage);
+    if (!toolDrag?.moved) scheduleToolSnap();
+  });
 }, { passive: true });
-previousTools.addEventListener("click", () => scrollToToolPage(nearestToolPage() - 1));
-nextTools.addEventListener("click", () => scrollToToolPage(nearestToolPage() + 1));
+previousTools.addEventListener("click", () => scrollToToolPage(toolTargetPage - 1));
+nextTools.addEventListener("click", () => scrollToToolPage(toolTargetPage + 1));
 toolStrip.addEventListener("keydown", (event) => {
   if (event.target !== toolStrip || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
   event.preventDefault();
-  scrollToToolPage(nearestToolPage() + (event.key === "ArrowRight" ? 1 : -1));
+  scrollToToolPage(toolTargetPage + (event.key === "ArrowRight" ? 1 : -1));
 });
 window.addEventListener("resize", () => {
-  const currentPage = nearestToolPage();
+  const currentPage = toolTargetPage;
+  toolPageOffsets = null;
   updateToolLayout();
   scrollToToolPage(currentPage, "auto");
 });
@@ -1571,7 +2139,7 @@ async function bootstrap() {
     localizeDocument(language);
     document.documentElement.dataset.theme = uiPreferences.theme === "system" ? "" : uiPreferences.theme;
     await withTimeout(loadToolOrder(), POPUP_REQUEST_TIMEOUT_MS, "Tool layout");
-    await refresh();
+    await refresh({ cachedFirst: true });
   } catch {
     language = browserLanguage();
     localizeDocument(language);

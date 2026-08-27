@@ -26,10 +26,12 @@ import {
   contentBlockingSnapshot,
   customBlockRules,
   normalizeSiteDomain,
-  temporaryPauseRules
+  temporaryPauseRules,
+  youtubePlaybackRules
 } from "../features/security/blocker.js";
 import {
   appendRedirectStep,
+  sameMediaSite,
   normalizeRedirectHistory,
   registrableSite,
   sanitizeCleanupSites
@@ -39,12 +41,27 @@ import {
   serializePrivacySessions
 } from "../features/tools/privacy-sessions.js";
 import { withTimeout } from "./async-utils.js";
-import { cleanTrackingURL, sanitizeStoredMediaURL } from "../features/security/clean-link.js";
+import {
+  cleanTrackingURL,
+  preferredMediaPageURL,
+  repairStoredMediaURL,
+  sanitizeStoredMediaURL
+} from "../features/security/clean-link.js";
 import {
   DEFAULT_FEATURE_PREFERENCES,
   normalizeFeaturePreferences,
   siteIsExcluded
 } from "../features/tools/feature-preferences.js";
+import {
+  continueWatchingDisposition,
+  mostRecentClosedWindow,
+  sanitizeStartupRecap,
+  sanitizeStartupTabs,
+  safeImageURL,
+  safeWebURL,
+  videoResumeURL
+} from "../features/tools/startup-recap.js";
+import { planTabGroups } from "../features/tools/tab-organizer.js";
 
 const ALARM_NAME = "collect-browser-snapshot";
 const CUSTOM_FILTER_FIRST_RULE_ID = 630_000;
@@ -64,6 +81,10 @@ const FEATURE_PREFERENCES_KEY = "featurePreferences";
 const BLOCKING_JOURNAL_KEY = "blockingRequestJournal";
 const ONE_RELOAD_BYPASS_KEY = "oneReloadBypassSites";
 const CONTINUE_WATCHING_KEY = "continueWatching";
+const CONTINUE_WATCHING_TABS_KEY = "continueWatchingTabs";
+const STARTUP_RECAP_KEY = "startupRecap";
+const BROWSER_SESSION_KEY = "browserSessionMarker";
+const RECENT_CLOSED_CUTOFF_KEY = "recentClosedTabsClearedAt";
 const SPONSOR_CACHE_KEY = "sponsorSegmentCache";
 const SPONSOR_CACHE_LIMIT = 80;
 const SPONSOR_CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
@@ -118,6 +139,11 @@ let blockingStatisticsTimer = null;
 let blockingStatisticsWrite = Promise.resolve();
 let activityStatisticsWrite = Promise.resolve();
 let continueWatchingWrite = Promise.resolve();
+let startupRecapDelivery = Promise.resolve();
+let browserSessionInitialization = null;
+const thumbnailImageCache = new Map();
+const RECENT_CLOSED_CACHE_TTL_MS = 5_000;
+let recentClosedTabsCache = null;
 let cryptoGuardCopy = null;
 const privacySessions = new Map();
 let privacySessionsHydration = null;
@@ -616,34 +642,28 @@ function normalizedContinueWatching(input, retentionDays = 90) {
     const mediaType = ["episode", "movie", "video"].includes(entry?.mediaType)
       ? entry.mediaType
       : "video";
-    let url = "";
-    try {
-      const parsed = new URL(String(entry?.url ?? ""));
-      if (["http:", "https:"].includes(parsed.protocol)) {
-        parsed.username = "";
-        parsed.password = "";
-        parsed.hash = "";
-        for (const key of [...parsed.searchParams.keys()]) {
-          if (/^(?:utm_.+|token|session|auth|authorization|signature|sig|key|expires)$/i.test(key)) {
-            parsed.searchParams.delete(key);
-          }
-        }
-        url = parsed.href.slice(0, 2_048);
-      }
-    } catch {}
-    const removedParameters = Array.isArray(entry?.removedParameters)
-      ? entry.removedParameters.map(String).filter(Boolean).slice(0, 30) : [];
-    return [[identity, { position, duration, updatedAt, title, episode, site, mediaType, url, removedParameters }]];
+    const thumbnailURL = safeImageURL(entry?.thumbnailURL);
+    const repairedURL = repairStoredMediaURL(entry?.url, thumbnailURL);
+    const url = repairedURL.url;
+    const removedParameters = [...new Set([
+      ...(Array.isArray(entry?.removedParameters) ? entry.removedParameters.map(String) : []),
+      ...repairedURL.removed
+    ])].filter(Boolean).slice(0, 30);
+    return [[identity, { position, duration, updatedAt, title, episode, site, mediaType, url, thumbnailURL, removedParameters }]];
   }).sort((left, right) => right[1].updatedAt - left[1].updatedAt).slice(0, CONTINUE_WATCHING_LIMIT);
   return { version: 2, entries: Object.fromEntries(entries) };
 }
 
-async function getContinueWatchingPosition(identity) {
+async function getContinueWatchingPosition(identity, pageURL = "") {
   if (!/^[a-f0-9]{64}$/.test(String(identity ?? ""))) return {};
   await continueWatchingWrite;
   const stored = await chrome.storage.local.get({ [CONTINUE_WATCHING_KEY]: { version: 2, entries: {} } });
   const preferences = await featurePreferencesStorage();
-  return normalizedContinueWatching(stored[CONTINUE_WATCHING_KEY], preferences.continueWatchingRetentionDays).entries[identity] ?? {};
+  const entries = normalizedContinueWatching(stored[CONTINUE_WATCHING_KEY], preferences.continueWatchingRetentionDays).entries;
+  if (entries[identity]) return entries[identity];
+  const currentURL = sanitizeStoredMediaURL(pageURL).url;
+  if (!currentURL) return {};
+  return Object.values(entries).find((entry) => entry.url === currentURL) ?? {};
 }
 
 async function getContinueWatchingList() {
@@ -656,16 +676,17 @@ async function getContinueWatchingList() {
 }
 
 function setContinueWatchingPosition({
-  identity, position, duration, completed, title, episode, mediaType, pageURL
+  identity, position, duration, completed, title, episode, mediaType, pageURL, thumbnailURL, tabId
 }) {
   if (!/^[a-f0-9]{64}$/.test(String(identity ?? ""))) return Promise.resolve({ ok: false });
   continueWatchingWrite = continueWatchingWrite.then(async () => {
     const preferences = await featurePreferencesStorage();
     const stored = await chrome.storage.local.get({ [CONTINUE_WATCHING_KEY]: { version: 2, entries: {} } });
     const normalized = normalizedContinueWatching(stored[CONTINUE_WATCHING_KEY], preferences.continueWatchingRetentionDays);
-    if (completed || !Number.isFinite(position) || position < 10 || position >= duration - 20) {
+    const disposition = continueWatchingDisposition(position, duration, completed);
+    if (disposition === "remove") {
       delete normalized.entries[identity];
-    } else if (Number.isFinite(duration) && duration >= 120) {
+    } else if (disposition === "store") {
       let site = "";
       try { site = new URL(pageURL).hostname.replace(/^www\./, ""); } catch {}
       const sanitizedURL = sanitizeStoredMediaURL(pageURL);
@@ -678,12 +699,61 @@ function setContinueWatchingPosition({
         mediaType,
         site,
         url: sanitizedURL.url,
+        thumbnailURL: safeImageURL(thumbnailURL),
         removedParameters: sanitizedURL.removed
       };
     }
     await chrome.storage.local.set({ [CONTINUE_WATCHING_KEY]: normalizedContinueWatching(normalized, preferences.continueWatchingRetentionDays) });
+    if (Number.isInteger(tabId) && disposition !== "ignore") {
+      const storedTabs = await chrome.storage.session.get({ [CONTINUE_WATCHING_TABS_KEY]: {} });
+      const tracked = Object.fromEntries(Object.entries(storedTabs[CONTINUE_WATCHING_TABS_KEY] ?? {})
+        .filter(([key, value]) => /^\d+$/.test(key) && /^[a-f0-9]{64}$/.test(String(value?.identity ?? "")))
+        .slice(-50));
+      if (disposition === "store") tracked[String(tabId)] = { identity, updatedAt: Date.now() };
+      else delete tracked[String(tabId)];
+      await chrome.storage.session.set({ [CONTINUE_WATCHING_TABS_KEY]: tracked });
+    }
   }).catch(() => {});
   return continueWatchingWrite.then(() => ({ ok: true }));
+}
+
+async function queueContinueWatchingForClosedTab(tabId, closedAt = Date.now()) {
+  if (!Number.isInteger(tabId)) return false;
+  const storedTabs = await chrome.storage.session.get({ [CONTINUE_WATCHING_TABS_KEY]: {} });
+  const tracked = { ...(storedTabs[CONTINUE_WATCHING_TABS_KEY] ?? {}) };
+  const closed = tracked[String(tabId)];
+  delete tracked[String(tabId)];
+  await chrome.storage.session.set({ [CONTINUE_WATCHING_TABS_KEY]: tracked });
+  if (!/^[a-f0-9]{64}$/.test(String(closed?.identity ?? "")) || Date.now() - Number(closed?.updatedAt) > 10 * 60 * 1_000) {
+    return false;
+  }
+  const entry = (await getContinueWatchingList()).find((item) => item.identity === closed.identity);
+  if (!entry) return false;
+  const [{ [STARTUP_RECAP_KEY]: existing }, storedUI] = await Promise.all([
+    chrome.storage.session.get({ [STARTUP_RECAP_KEY]: null }),
+    chrome.storage.local.get({ uiPreferences: { language: null } })
+  ]);
+  const current = sanitizeStartupRecap(existing);
+  const payload = sanitizeStartupRecap({
+    id: crypto.randomUUID(),
+    createdAt: Date.now(),
+    language: storedUI.uiPreferences?.language
+      || (chrome.i18n.getUILanguage().toLowerCase().startsWith("ru") ? "ru" : "en"),
+    targetTabId: null,
+    claimOnNextTab: true,
+    claimAfter: closedAt,
+    tabs: current?.tabs ?? [],
+    video: {
+      title: entry.title,
+      url: entry.url,
+      thumbnailURL: entry.thumbnailURL,
+      position: entry.position,
+      time: formatStartupPlaybackTime(entry.position)
+    }
+  });
+  if (!payload) return false;
+  await chrome.storage.session.set({ [STARTUP_RECAP_KEY]: payload });
+  return true;
 }
 
 function removeContinueWatchingEntry(identity) {
@@ -695,6 +765,215 @@ function removeContinueWatchingEntry(identity) {
     await chrome.storage.local.set({ [CONTINUE_WATCHING_KEY]: normalized });
   });
   return continueWatchingWrite.then(() => ({ ok: true }));
+}
+
+function formatStartupPlaybackTime(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(total / 3_600);
+  const minutes = Math.floor((total % 3_600) / 60);
+  const remainder = String(total % 60).padStart(2, "0");
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${remainder}`
+    : `${minutes}:${remainder}`;
+}
+
+function isWebTab(tab) {
+  return Boolean(tab?.id && /^https?:/i.test(tab.url || tab.pendingUrl || ""));
+}
+
+async function faviconDataURL(pageURL) {
+  const url = safeWebURL(pageURL);
+  if (!url) return "";
+  try {
+    const faviconURL = new URL(chrome.runtime.getURL("_favicon/"));
+    faviconURL.searchParams.set("pageUrl", url);
+    faviconURL.searchParams.set("size", "32");
+    const response = await fetch(faviconURL.href);
+    if (!response.ok) return "";
+    const blob = await response.blob();
+    if (!blob.type.startsWith("image/") || blob.size > 24_000) return "";
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 8_192) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 8_192));
+    }
+    return safeImageURL(`data:${blob.type};base64,${btoa(binary)}`);
+  } catch {
+    return "";
+  }
+}
+
+async function thumbnailImageData(value) {
+  const source = safeImageURL(value);
+  if (!source) return null;
+  if (thumbnailImageCache.has(source)) return thumbnailImageCache.get(source);
+  const request = (async () => {
+  try {
+    const response = await fetch(source, { referrerPolicy: "no-referrer" });
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    if (!blob.type.startsWith("image/") || blob.size > 500_000) return null;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 8_192) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 8_192));
+    }
+    return { mime: blob.type, base64: btoa(binary) };
+  } catch {
+    return null;
+  }
+  })();
+  thumbnailImageCache.set(source, request);
+  const result = await request;
+  if (!result) thumbnailImageCache.delete(source);
+  else setTimeout(() => thumbnailImageCache.delete(source), 2 * 60 * 1000);
+  return result;
+}
+
+async function sanitizeTabsWithFavicons(sourceTabs, openURLs = [], limit = 12) {
+  const sanitized = sanitizeStartupTabs(sourceTabs, openURLs, limit);
+  const sourceByURL = new Map((Array.isArray(sourceTabs) ? sourceTabs : []).map((tab) => [safeWebURL(tab?.url), tab]));
+  return Promise.all(sanitized.map(async (tab) => {
+    const source = sourceByURL.get(tab.url);
+    const sessionFavicon = safeImageURL(source?.favIconUrl || source?.faviconURL);
+    return { ...tab, faviconURL: sessionFavicon || await faviconDataURL(tab.url) };
+  }));
+}
+
+async function recentClosedSessions() {
+  const [{ [RECENT_CLOSED_CUTOFF_KEY]: clearedAt }, sessions] = await Promise.all([
+    chrome.storage.local.get({ [RECENT_CLOSED_CUTOFF_KEY]: 0 }),
+    chrome.sessions.getRecentlyClosed({ maxResults: 25 }).catch(() => [])
+  ]);
+  return sessions.filter((entry) => Number(entry?.lastModified) > Number(clearedAt || 0));
+}
+
+async function getRecentClosedTabs() {
+  if (recentClosedTabsCache?.expiresAt > Date.now()) return recentClosedTabsCache.tabs;
+  const sessions = await recentClosedSessions();
+  const sourceTabs = sessions.flatMap((entry) => entry?.window?.tabs || (entry?.tab ? [entry.tab] : []));
+  const tabs = sanitizeStartupTabs(sourceTabs, [], 12).map((tab) => ({ ...tab, faviconURL: "" }));
+  recentClosedTabsCache = { tabs, expiresAt: Date.now() + RECENT_CLOSED_CACHE_TTL_MS };
+  return tabs;
+}
+
+async function clearRecentClosedTabs() {
+  recentClosedTabsCache = null;
+  await Promise.all([
+    chrome.storage.local.set({ [RECENT_CLOSED_CUTOFF_KEY]: Date.now() }),
+    chrome.storage.session.remove(STARTUP_RECAP_KEY)
+  ]);
+  return { ok: true };
+}
+
+async function prepareStartupRecap() {
+  if (!await extensionEnabledStorage()) {
+    await chrome.storage.session.remove(STARTUP_RECAP_KEY);
+    return null;
+  }
+  const [recentlyClosed, openTabs, activeTabs, preferences, storedUI, videos] = await Promise.all([
+    recentClosedSessions(),
+    chrome.tabs.query({}).catch(() => []),
+    chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []),
+    featurePreferencesStorage(),
+    chrome.storage.local.get({ uiPreferences: { language: null } }),
+    getContinueWatchingList().catch(() => [])
+  ]);
+  const recentWindow = mostRecentClosedWindow(recentlyClosed);
+  const tabs = await sanitizeTabsWithFavicons(
+    recentWindow?.window?.tabs,
+    openTabs.map((tab) => tab.url || tab.pendingUrl || "")
+  );
+  const targetTab = activeTabs.find(isWebTab);
+  const latestVideo = preferences.continueWatchingEnabled !== false ? videos[0] : null;
+  const payload = sanitizeStartupRecap({
+    id: crypto.randomUUID(),
+    createdAt: Date.now(),
+    language: storedUI.uiPreferences?.language
+      || (chrome.i18n.getUILanguage().toLowerCase().startsWith("ru") ? "ru" : "en"),
+    targetTabId: targetTab?.id ?? null,
+    tabs,
+    video: latestVideo ? {
+      title: latestVideo.title,
+      url: latestVideo.url,
+      thumbnailURL: latestVideo.thumbnailURL,
+      position: latestVideo.position,
+      time: formatStartupPlaybackTime(latestVideo.position)
+    } : null
+  });
+  if (payload) await chrome.storage.session.set({ [STARTUP_RECAP_KEY]: payload });
+  else await chrome.storage.session.remove(STARTUP_RECAP_KEY);
+  return payload;
+}
+
+async function deliverStartupRecap(preferredTabId = null, pageStartedAt = 0) {
+  startupRecapDelivery = startupRecapDelivery.then(async () => {
+    const stored = await chrome.storage.session.get({ [STARTUP_RECAP_KEY]: null });
+    const payload = sanitizeStartupRecap(stored[STARTUP_RECAP_KEY]);
+    if (!payload) {
+      await chrome.storage.session.remove(STARTUP_RECAP_KEY);
+      return false;
+    }
+    let targetTabId = payload.targetTabId;
+    if (payload.claimOnNextTab && !Number.isInteger(targetTabId)
+        && (!Number.isFinite(Number(pageStartedAt)) || Number(pageStartedAt) < payload.claimAfter - 250)) return false;
+    if (!Number.isInteger(targetTabId) && Number.isInteger(preferredTabId)) {
+      const preferred = await chrome.tabs.get(preferredTabId).catch(() => null);
+      if (isWebTab(preferred)) {
+        if (payload.video && payload.tabs.length === 0 && !sameMediaSite(payload.video.url, preferred.url || preferred.pendingUrl)) {
+          return false;
+        }
+        targetTabId = preferred.id;
+        await chrome.storage.session.set({
+          [STARTUP_RECAP_KEY]: sanitizeStartupRecap({ ...payload, targetTabId, claimOnNextTab: false })
+        });
+      }
+    }
+    if (!Number.isInteger(targetTabId)) return false;
+    if (Number.isInteger(preferredTabId) && preferredTabId !== targetTabId) return false;
+    const tab = await chrome.tabs.get(targetTabId).catch(() => null);
+    if (!isWebTab(tab)) return false;
+    const videoMatchesPage = !payload.video || sameMediaSite(payload.video.url, tab.url || tab.pendingUrl);
+    if (!videoMatchesPage && payload.tabs.length === 0) {
+      await chrome.storage.session.set({
+        [STARTUP_RECAP_KEY]: sanitizeStartupRecap({ ...payload, targetTabId: null })
+      });
+      return false;
+    }
+    const deliveryPayload = videoMatchesPage
+      ? payload
+      : sanitizeStartupRecap({ ...payload, video: null });
+    const result = await chrome.tabs.sendMessage(tab.id, { kind: "showStartupRecap", payload: deliveryPayload }).catch(() => null);
+    if (!result?.ok) return false;
+    if (videoMatchesPage) {
+      await chrome.storage.session.remove(STARTUP_RECAP_KEY);
+    } else {
+      await chrome.storage.session.set({
+        [STARTUP_RECAP_KEY]: sanitizeStartupRecap({ ...payload, targetTabId: null, tabs: [] })
+      });
+    }
+    return true;
+  }).catch(() => false);
+  return startupRecapDelivery;
+}
+
+function ensureBrowserSessionRecap() {
+  if (browserSessionInitialization) return browserSessionInitialization;
+  browserSessionInitialization = (async () => {
+    const stored = await chrome.storage.session.get({ [BROWSER_SESSION_KEY]: "" });
+    if (stored[BROWSER_SESSION_KEY]) return false;
+    await chrome.storage.session.set({ [BROWSER_SESSION_KEY]: crypto.randomUUID() });
+    await prepareStartupRecap();
+    await deliverStartupRecap();
+    return true;
+  })().catch(() => false);
+  return browserSessionInitialization;
+}
+
+async function openStartupTabs(urls) {
+  const safeURLs = [...new Set((Array.isArray(urls) ? urls : []).map(safeWebURL).filter(Boolean))].slice(0, 12);
+  for (const url of safeURLs) await chrome.tabs.create({ url, active: false });
+  return { ok: true, opened: safeURLs.length };
 }
 
 async function sitePrivacyReceipt(tabId, url) {
@@ -961,6 +1240,17 @@ async function installTemporaryPauseRules(pauses) {
   });
 }
 
+async function installYouTubePlaybackRules(enabled) {
+  const current = await chrome.declarativeNetRequest.getDynamicRules();
+  const removeRuleIds = current
+    .filter((rule) => rule.id >= 615_000 && rule.id < 615_100)
+    .map((rule) => rule.id);
+  await chrome.declarativeNetRequest.updateDynamicRules({
+    removeRuleIds,
+    addRules: youtubePlaybackRules(enabled)
+  });
+}
+
 async function installCryptominingRules(enabled) {
   const current = await chrome.declarativeNetRequest.getDynamicRules();
   const removeRuleIds = current
@@ -1201,6 +1491,12 @@ async function applyProtectionConfiguration(settings) {
   await installAllowlistRules(settings.allowlistedSites ?? []);
   await installCustomBlockRules(effectiveContentBlockingEnabled ? (settings.customBlockedDomains ?? []) : []);
   await installTemporaryPauseRules(effectiveContentBlockingEnabled ? activeTemporaryPauses(blocker.temporarySitePauses) : {});
+  await installYouTubePlaybackRules(
+    effectiveContentBlockingEnabled
+      && settings.adFilterEnabled
+      && settings.videoAdProtectionEnabled
+      && !settings.privacyFilterEnabled
+  );
   await installCryptominingRules(
     effectiveContentBlockingEnabled && settings.cryptominingProtectionEnabled
   );
@@ -1220,12 +1516,15 @@ async function syncCosmeticFilteringForTab(tabId, url) {
     && state.contentBlockingEnabled
     && !state.allowlistedSites.includes(domain)
     && !activePauses[domain];
+  const youtubePlaybackActive = (domain === "youtube.com" || domain.endsWith(".youtube.com"))
+    && settings.videoAdProtectionEnabled
+    && !settings.privacyFilterEnabled;
   const styles = [
-    ["rules/easylist-cosmetic.css", siteProtectionActive && settings.cosmeticFilteringEnabled],
+    ["rules/easylist-cosmetic.css", siteProtectionActive && !youtubePlaybackActive && settings.cosmeticFilteringEnabled],
     ["rules/easylist-cookie-cosmetic.css", siteProtectionActive && settings.cookieBannerBlockingEnabled],
-    ["rules/ruadlist-cosmetic.css", siteProtectionActive && settings.cosmeticFilteringEnabled && settings.regionalRussianFilteringEnabled],
+    ["rules/ruadlist-cosmetic.css", siteProtectionActive && !youtubePlaybackActive && settings.cosmeticFilteringEnabled && settings.regionalRussianFilteringEnabled],
     ["rules/fanboy-social-cosmetic.css", siteProtectionActive && settings.cosmeticFilteringEnabled && settings.socialWidgetBlockingEnabled],
-    ["rules/antiadblock-cosmetic.css", siteProtectionActive && settings.cosmeticFilteringEnabled && settings.antiAdblockMessageBlockingEnabled]
+    ["rules/antiadblock-cosmetic.css", siteProtectionActive && !youtubePlaybackActive && settings.cosmeticFilteringEnabled && settings.antiAdblockMessageBlockingEnabled]
   ];
   for (const [file, selected] of styles) {
     const injection = {
@@ -1622,6 +1921,10 @@ async function readTab(tab, ecoTabs, ecoRestoreStatus = {}) {
   const recentAssessment = metrics.recent ? assessTab({ ...metrics, ...metrics.recent }, tab) : assessment;
   return {
     tabId: tab.id,
+    windowId: tab.windowId,
+    tabIndex: tab.index,
+    groupId: Number.isInteger(tab.groupId) ? tab.groupId : -1,
+    pinned: Boolean(tab.pinned),
     title: tab.title ?? "",
     url: tab.url || tab.pendingUrl || "",
     active: Boolean(tab.active),
@@ -1648,6 +1951,159 @@ async function readTab(tab, ecoTabs, ecoRestoreStatus = {}) {
     ecoRestoreStatus: ecoRestoreStatus[String(tab.id)] ?? null,
     sponsorBlockStatus: sponsorStatusByTab.get(tab.id) ?? null
   };
+}
+
+async function currentTabGroups() {
+  if (!chrome.tabGroups?.query) return new Map();
+  const groups = await chrome.tabGroups.query({}).catch(() => []);
+  return new Map(groups.map((group) => [group.id, {
+    title: group.title || "",
+    color: group.color || "grey",
+    collapsed: Boolean(group.collapsed)
+  }]));
+}
+
+async function collectTabGroupState() {
+  const [tabs, groups] = await Promise.all([
+    chrome.tabs.query({}),
+    currentTabGroups()
+  ]);
+  return {
+    generatedAt: new Date().toISOString(),
+    tabs: tabs
+      .filter((tab) => /^https?:\/\//.test(tab.url || tab.pendingUrl || ""))
+      .map((tab) => {
+        const group = groups.get(Number(tab.groupId));
+        return {
+          tabId: tab.id,
+          windowId: tab.windowId,
+          tabIndex: tab.index,
+          groupId: Number.isInteger(tab.groupId) ? tab.groupId : -1,
+          groupTitle: group?.title || "",
+          groupColor: group?.color || "grey",
+          groupCollapsed: group?.collapsed === true,
+          pinned: Boolean(tab.pinned),
+          title: tab.title || "",
+          url: tab.url || tab.pendingUrl || "",
+          active: Boolean(tab.active),
+          audible: Boolean(tab.audible)
+        };
+      })
+  };
+}
+
+let tabGroupingWork = Promise.resolve();
+
+async function performTabOrganization(windowId, language) {
+  if (!Number.isInteger(Number(windowId))) throw new TypeError("A browser window is required");
+  const tabs = await chrome.tabs.query({ windowId: Number(windowId) });
+  const plans = planTabGroups(tabs, { language });
+  const nativeGroups = await chrome.tabGroups.query({ windowId: Number(windowId) }).catch(() => []);
+  const groupsByTitle = new Map(nativeGroups
+    .filter((group) => String(group.title || "").trim())
+    .map((group) => [String(group.title).trim(), group]));
+  let groupedTabCount = 0;
+  for (const plan of plans) {
+    if (!plan.tabIds.length) continue;
+    const existingGroup = groupsByTitle.get(plan.title);
+    const groupId = existingGroup?.id ?? await chrome.tabs.group({
+      tabIds: plan.tabIds,
+      createProperties: { windowId: plan.windowId }
+    });
+    if (existingGroup) {
+      const tabIdsToMove = plan.tabIds.filter((tabId) => tabs.find((tab) => tab.id === tabId)?.groupId !== groupId);
+      if (tabIdsToMove.length) await chrome.tabs.group({ tabIds: tabIdsToMove, groupId });
+    }
+    await chrome.tabGroups.update(groupId, {
+      title: plan.title,
+      color: "blue",
+      collapsed: false
+    });
+    groupedTabCount += plan.tabIds.length;
+  }
+  return {
+    snapshot: await collectSnapshot(),
+    groupCount: plans.length,
+    groupedTabCount
+  };
+}
+
+function organizeCurrentWindowTabs(windowId, language) {
+  const task = tabGroupingWork.then(() => performTabOrganization(windowId, language));
+  tabGroupingWork = task.catch(() => {});
+  return task;
+}
+
+async function moveTabToGroup(tabId, groupId) {
+  const id = Number(tabId);
+  const targetGroupId = Number(groupId);
+  if (!Number.isInteger(id) || !Number.isInteger(targetGroupId) || targetGroupId < 0) {
+    throw new TypeError("A browser tab and target group are required");
+  }
+  const [tab, group] = await Promise.all([
+    chrome.tabs.get(id),
+    chrome.tabGroups.get(targetGroupId)
+  ]);
+  if (tab.pinned) throw new Error("Pinned tabs cannot be moved into a group");
+  if (tab.windowId !== group.windowId) throw new Error("The tab and group must be in the same window");
+  if (tab.groupId !== targetGroupId) await chrome.tabs.group({ tabIds: id, groupId: targetGroupId });
+  return { groupState: await collectTabGroupState() };
+}
+
+async function moveTabGroup(groupId, targetGroupId, placement = "before") {
+  const sourceId = Number(groupId);
+  const targetId = Number(targetGroupId);
+  if (!Number.isInteger(sourceId) || sourceId < 0 || !Number.isInteger(targetId) || targetId < 0 || sourceId === targetId) {
+    throw new TypeError("Two different tab groups are required");
+  }
+  const [source, target] = await Promise.all([
+    chrome.tabGroups.get(sourceId),
+    chrome.tabGroups.get(targetId)
+  ]);
+  if (source.windowId !== target.windowId) throw new Error("Tab groups must be in the same window");
+
+  const tabs = (await chrome.tabs.query({ windowId: source.windowId }))
+    .sort((left, right) => Number(left.index) - Number(right.index));
+  const remainingTabs = tabs.filter((tab) => Number(tab.groupId) !== sourceId);
+  const targetIndexes = remainingTabs
+    .map((tab, index) => ({ tab, index }))
+    .filter(({ tab }) => Number(tab.groupId) === targetId)
+    .map(({ index }) => index);
+  if (!targetIndexes.length) throw new Error("The target tab group is empty");
+
+  const index = placement === "after"
+    ? targetIndexes[targetIndexes.length - 1] + 1
+    : targetIndexes[0];
+  await chrome.tabGroups.move(sourceId, { index });
+  return { groupState: await collectTabGroupState() };
+}
+
+async function renameTabGroup(groupId, title) {
+  const id = Number(groupId);
+  const nextTitle = String(title || "").trim().slice(0, 80);
+  if (!Number.isInteger(id) || id < 0 || !nextTitle) throw new TypeError("A group and name are required");
+  await chrome.tabGroups.update(id, { title: nextTitle });
+  return { groupState: await collectTabGroupState() };
+}
+
+async function ungroupTabGroup(groupId) {
+  const id = Number(groupId);
+  if (!Number.isInteger(id) || id < 0) throw new TypeError("A tab group is required");
+  const group = await chrome.tabGroups.get(id);
+  const tabIds = (await chrome.tabs.query({ windowId: group.windowId }))
+    .filter((tab) => Number(tab.groupId) === id && Number.isInteger(tab.id))
+    .map((tab) => tab.id);
+  if (tabIds.length) await chrome.tabs.ungroup(tabIds);
+  return { groupState: await collectTabGroupState() };
+}
+
+async function setTabPinned(tabId, pinned) {
+  const id = Number(tabId);
+  if (!Number.isInteger(id)) throw new TypeError("A browser tab is required");
+  const tab = await chrome.tabs.get(id);
+  if (pinned && Number(tab.groupId) >= 0) await chrome.tabs.ungroup(id);
+  await chrome.tabs.update(id, { pinned: Boolean(pinned) });
+  return { groupState: await collectTabGroupState() };
 }
 
 async function mapWithConcurrency(items, limit, callback) {
@@ -1776,12 +2232,19 @@ export async function collectSnapshot() {
   const blocker = await blockerStorage();
   const protectionSettings = await protectionSettingsStorage();
   const allTabs = await chrome.tabs.query({});
+  const groups = await currentTabGroups();
   const supportedTabs = allTabs
     .filter((tab) => /^https?:\/\//.test(tab.url || tab.pendingUrl || ""))
     .sort((left, right) => Number(right.active) - Number(left.active) || Number(right.audible) - Number(left.audible) || (right.lastAccessed ?? 0) - (left.lastAccessed ?? 0));
   const reports = extensionEnabled && state.monitoringEnabled
     ? await mapWithConcurrency(supportedTabs, 4, (tab) => readTab(tab, state.ecoTabs, state.ecoRestoreStatus))
     : [];
+  for (const report of reports) {
+    const group = groups.get(report.groupId);
+    report.groupTitle = group?.title || "";
+    report.groupColor = group?.color || "grey";
+    report.groupCollapsed = group?.collapsed === true;
+  }
   reports.sort((left, right) => right.score - left.score);
 
   const snapshot = {
@@ -1819,6 +2282,8 @@ async function disableActionCount() {
   });
   await chrome.action.setBadgeText({ text: "" });
 }
+
+void ensureBrowserSessionRecap();
 
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.local.get([
@@ -1867,6 +2332,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 chrome.runtime.onStartup.addListener(async () => {
+  const startupRecap = ensureBrowserSessionRecap();
   contentBlockingEnabledCached = await extensionEnabledStorage() && (await blockerStorage()).contentBlockingEnabled;
   await disableActionCount();
   await applyProtectionConfiguration(await protectionSettingsStorage());
@@ -1874,6 +2340,8 @@ chrome.runtime.onStartup.addListener(async () => {
   await chrome.alarms.create(ALARM_NAME, { periodInMinutes: 15 });
   await setupContextMenus();
   await collectSnapshot();
+  await startupRecap;
+  await deliverStartupRecap();
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -1895,8 +2363,16 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
+  const closedAt = Date.now();
+  recentClosedTabsCache = null;
+  await queueContinueWatchingForClosedTab(tabId, closedAt).catch(() => false);
   await ensurePrivacySessionsHydrated();
   await ensureTabOriginsHydrated();
+  const startupStored = await chrome.storage.session.get({ [STARTUP_RECAP_KEY]: null });
+  const startupPayload = sanitizeStartupRecap(startupStored[STARTUP_RECAP_KEY]);
+  if (startupPayload?.targetTabId === tabId) {
+    await chrome.storage.session.set({ [STARTUP_RECAP_KEY]: { ...startupPayload, targetTabId: null } });
+  }
   privacySessions.delete(tabId);
   sponsorStatusByTab.delete(tabId);
   await persistPrivacySessions();
@@ -1991,6 +2467,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     }
     await syncCosmeticFilteringForTab(tabId, tab.url);
     await notifyHistoryPrivacyDomainsForTab(tabId).catch(() => {});
+    await deliverStartupRecap(tabId);
   }
 });
 
@@ -2108,9 +2585,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
   if (message?.kind === "getContinueWatchingPosition") {
-    getContinueWatchingPosition(String(message.identity ?? ""))
+    getContinueWatchingPosition(String(message.identity ?? ""), sender.tab?.url)
+      .then(async (saved) => ({
+        ...saved,
+        thumbnailImage: saved.thumbnailURL ? await thumbnailImageData(saved.thumbnailURL) : null
+      }))
       .then(sendResponse)
       .catch(() => sendResponse({}));
+    return true;
+  }
+  if (message?.kind === "openStartupTabs") {
+    openStartupTabs(message.urls).then(sendResponse).catch(() => sendResponse({ ok: false, opened: 0 }));
+    return true;
+  }
+  if (message?.kind === "startupRecapReady") {
+    deliverStartupRecap(sender.tab?.id, Number(message.pageStartedAt))
+      .then((ok) => sendResponse({ ok }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  if (message?.kind === "getRecentClosedTabs") {
+    getRecentClosedTabs().then((tabs) => sendResponse({ tabs })).catch(() => sendResponse({ tabs: [] }));
+    return true;
+  }
+  if (message?.kind === "getThumbnailImage") {
+    thumbnailImageData(message.url).then((image) => sendResponse({ image })).catch(() => sendResponse({ image: null }));
+    return true;
+  }
+  if (message?.kind === "clearRecentClosedTabs") {
+    clearRecentClosedTabs().then(sendResponse).catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  if (message?.kind === "openStartupVideo") {
+    const url = videoResumeURL(message.url, Number(message.position));
+    if (!url || !Number.isInteger(sender.tab?.id)) {
+      sendResponse({ ok: false });
+      return false;
+    }
+    chrome.tabs.update(sender.tab.id, { url })
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
     return true;
   }
   if (message?.kind === "getContinueWatchingList") {
@@ -2132,7 +2646,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       title: String(message.title ?? ""),
       episode: String(message.episode ?? ""),
       mediaType: String(message.mediaType ?? ""),
-      pageURL: String(sender.tab?.url ?? message.pageURL ?? "")
+      thumbnailURL: String(message.thumbnailURL ?? ""),
+      pageURL: preferredMediaPageURL(
+        message.pageURL,
+        sender.tab?.url || sender.url,
+        { topFrame: sender.frameId === 0 || sender.frameId == null }
+      ),
+      tabId: sender.tab?.id
     }).then(sendResponse).catch(() => sendResponse({ ok: false }));
     return true;
   }
@@ -2449,6 +2969,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })
       .then(() => collectSnapshot())
       .then(sendResponse);
+    return true;
+  }
+  if (message?.kind === "organizeCurrentWindowTabs") {
+    organizeCurrentWindowTabs(message.windowId, message.language)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error?.message ?? "Tabs could not be grouped" }));
+    return true;
+  }
+  if (message?.kind === "getTabGroupState") {
+    collectTabGroupState()
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error?.message ?? "Tab groups could not be synchronized" }));
+    return true;
+  }
+  if (message?.kind === "moveTabToGroup") {
+    moveTabToGroup(message.tabId, message.groupId)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error?.message ?? "Tab could not be moved" }));
+    return true;
+  }
+  if (message?.kind === "moveTabGroup") {
+    moveTabGroup(message.groupId, message.targetGroupId, message.placement)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error?.message ?? "Tab group could not be moved" }));
+    return true;
+  }
+  if (message?.kind === "renameTabGroup") {
+    renameTabGroup(message.groupId, message.title)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error?.message ?? "Tab group could not be renamed" }));
+    return true;
+  }
+  if (message?.kind === "ungroupTabGroup") {
+    ungroupTabGroup(message.groupId)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error?.message ?? "Tab group could not be dissolved" }));
+    return true;
+  }
+  if (message?.kind === "setTabPinned") {
+    setTabPinned(message.tabId, message.pinned)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error?.message ?? "Tab pin state could not be changed" }));
     return true;
   }
   if (message?.kind === "setContentBlocking") {

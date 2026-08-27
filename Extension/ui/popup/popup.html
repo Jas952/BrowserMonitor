@@ -95,11 +95,23 @@
       <div id="tab-activity-view" class="tabs-view">
         <div class="section-heading">
           <span id="tabs-title" data-i18n="tabActivity">Tab Activity</span>
-          <span id="tabs-count">0</span>
-          <div id="more-tabs" class="more-tabs" hidden>
-            <button id="previous-tabs" type="button" aria-label="Previous tabs">‹</button>
-            <span id="tab-page-label"></span>
-            <button id="next-tabs" type="button" aria-label="Next tabs">›</button>
+          <div class="tab-heading-actions">
+            <span id="tabs-count">0</span>
+            <div id="more-tabs" class="more-tabs" hidden>
+              <button id="previous-tabs" type="button" aria-label="Previous tabs">‹</button>
+              <span id="tab-page-label"></span>
+              <button id="next-tabs" type="button" aria-label="Next tabs">›</button>
+            </div>
+            <button id="auto-group-tabs" class="section-icon-button" type="button" data-i18n-title="autoGroupTabsHint" data-i18n-aria="autoGroupTabsHint">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 8h6l1.5 2h9.5v9h-17V8Z"/><path d="m16.5 3 .6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6.6-1.4ZM11.5 4.5h-5l-1 1.5"/></svg>
+            </button>
+            <button id="recent-tabs-button" class="section-icon-button" type="button" data-i18n-title="recentTabsHint" data-i18n-aria="recentTabsHint" aria-controls="recent-tabs-view">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5M12 8v4l2.5 1.5"/></svg>
+            </button>
+            <button id="clear-recent-tabs" class="section-icon-button" type="button" data-i18n-title="clearRecentTabsHint" data-i18n-aria="clearRecentTabsHint">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14M9 8V5h6v3M8 8l1 11h6l1-11M11 11v5M14 11v5"/></svg>
+            </button>
+            <span id="tab-action-status" class="sr-only" role="status" aria-live="polite"></span>
           </div>
         </div>
         <main id="tab-list"></main>
@@ -110,6 +122,13 @@
           <button id="close-watch-history" class="section-close-button" type="button" data-i18n-aria="closeWatchHistory" aria-label="Close">×</button>
         </div>
         <main id="watch-history-list" class="watch-history-list"></main>
+      </div>
+      <div id="recent-tabs-view" class="tabs-view recent-tabs-view" hidden>
+        <div class="section-heading history-heading">
+          <span data-i18n="recentTabsTitle">Recently closed</span>
+          <button id="close-recent-tabs" class="section-close-button" type="button" data-i18n-aria="closeRecentTabs" aria-label="Close">×</button>
+        </div>
+        <main id="recent-tabs-list" class="recent-tabs-list"></main>
       </div>
     </section>
 

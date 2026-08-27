@@ -8,7 +8,7 @@ test("manifest is valid Manifest V3 JSON", () => {
 
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.name, "Browser Monitor");
-  assert.equal(manifest.version, "1.1.4");
+  assert.equal(manifest.version, "1.1.6");
   assert.ok(!("key" in manifest));
   assert.equal(manifest.background.type, "module");
   assert.ok(!manifest.permissions.includes("nativeMessaging"));
@@ -17,13 +17,15 @@ test("manifest is valid Manifest V3 JSON", () => {
   assert.ok(manifest.permissions.includes("scripting"));
   assert.ok(manifest.permissions.includes("webRequest"));
   assert.ok(manifest.permissions.includes("webNavigation"));
+  assert.ok(manifest.permissions.includes("sessions"));
+  assert.ok(manifest.permissions.includes("tabGroups"));
   assert.ok(!manifest.permissions.includes("cookies"));
   assert.ok(!manifest.permissions.includes("downloads"));
   assert.ok(!manifest.permissions.includes("clipboardWrite"));
   assert.deepEqual(manifest.optional_permissions, ["browsingData", "bookmarks", "clipboardWrite", "cookies", "downloads", "history"]);
   assert.ok(manifest.permissions.includes("contextMenus"));
   assert.ok(manifest.permissions.includes("favicon"));
-  for (const permission of ["bookmarks", "sidePanel", "tabGroups"]) {
+  for (const permission of ["bookmarks", "sidePanel"]) {
     assert.ok(!manifest.permissions.includes(permission), `${permission} is no longer needed`);
   }
   assert.ok(!("side_panel" in manifest));
@@ -122,12 +124,17 @@ test("popup UI is localized and reserves stable control widths", () => {
 
   assert.match(localization, /ru:\s*\{/);
   assert.match(localization, /en:\s*\{/);
+  assert.match(localization, /extensionVersion:\s*"Version \{version\}"/);
+  assert.match(localization, /extensionVersion:\s*"Версия \{version\}"/);
+  assert.doesNotMatch(localization, /Extension only|Только расширение/);
+  assert.match(popupJS, /t\("extensionVersion", \{ version: chrome\.runtime\.getManifest\(\)\.version \}\)/);
   assert.match(localization, /filtersCount:\s*"\{network\} \+ \{cosmetic\} фильтров"/);
   assert.match(popupHTML, /<link rel="stylesheet" href="popup\.css">/);
   assert.match(popupHTML, /data-i18n="appName"/);
   assert.match(popupHTML, /id="settings-button"/);
   assert.match(popupHTML, /id="header-statistics-button"/);
   assert.match(popupHTML, /id="header-activity-button"/);
+  assert.match(popupHTML, /id="auto-group-tabs"/);
   assert.doesNotMatch(popupHTML, /id="activity-button"|id="activity-tab-button"/);
   assert.match(popupHTML, /id="feedback-button"/);
   assert.match(popupHTML, /id="privacy-receipt-button"/);
@@ -197,7 +204,7 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(popupJS, /--tool-drag-x/);
   assert.doesNotMatch(popupJS, /toolScrollTrack|updateToolScrollIndicator/);
   assert.doesNotMatch(popupJS, /setTimeout\(\(\) => document\.body\.classList\.remove\("preload"\)/);
-  assert.match(popupJS, /chrome\.tabs\.create\(\{ url: entry\.url, active: true \}\)/);
+  assert.match(popupJS, /videoResumeURL\(entry\.url, entry\.position\)/);
   assert.match(popupJS, /sitePausedNotice/);
   assert.match(popupCSS, /body\s*\{[^}]*width:\s*420px[^}]*height:\s*600px[^}]*overflow:\s*hidden/s);
   assert.doesNotMatch(popupCSS, /main\s*\{[^}]*overflow:\s*auto/s);
@@ -219,6 +226,44 @@ test("popup UI is localized and reserves stable control widths", () => {
   assert.match(popupCSS, /\.duplicates-list\s*\{[^}]*flex:\s*1[^}]*overflow-y:\s*auto/s);
   assert.match(popupCSS, /\.review-actions > button\s*\{[^}]*height:\s*30px[^}]*border-radius:\s*8px[^}]*font-size:\s*8px[^}]*font-weight:\s*620/s);
   assert.match(popupCSS, /\.eco-button\s*\{[^}]*width:\s*52px/s);
+  assert.match(popupCSS, /\.activity-tab-favicon\s*\{[^}]*width:\s*18px[^}]*height:\s*18px/s);
+  assert.match(popupJS, /function localFaviconURL\(url\)/);
+  assert.match(popupJS, /icon\.className = "activity-tab-favicon"/);
+  assert.match(popupJS, /icon\.src = localFaviconURL\(tab\.url\)/);
+  assert.match(popupJS, /kind: "organizeCurrentWindowTabs"/);
+  assert.match(popupJS, /kind: "moveTabToGroup"/);
+  assert.match(popupJS, /kind: "moveTabGroup"/);
+  assert.match(popupJS, /kind: "renameTabGroup"/);
+  assert.match(popupJS, /kind: "ungroupTabGroup"/);
+  assert.match(popupJS, /kind: "getTabGroupState"/);
+  assert.match(popupJS, /applyTabGroupState\(updated\.groupState\)/);
+  assert.match(popupJS, /chrome\.storage\.local\.get\(\{ latestSnapshot: null \}\)/);
+  assert.match(popupJS, /refresh\(\{ cachedFirst: true \}\)/);
+  assert.match(popupJS, /const POPUP_SNAPSHOT_REUSE_MS = 15_000/);
+  assert.match(popupJS, /cachedSnapshotIsFresh = latestSnapshot\.tabs\.length > 0/);
+  assert.match(popupJS, /setTimeout\(\(\) => \{\s*void refreshCurrentState\(\)/s);
+  assert.match(popupJS, /chrome\.tabGroups\?\.onCreated/);
+  assert.match(popupJS, /chrome\.tabGroups\?\.onUpdated/);
+  assert.match(popupJS, /kind: "getThumbnailImage"/);
+  assert.match(popupJS, /image\.className = "watch-thumbnail"/);
+  assert.match(popupJS, /kind: "setTabPinned"/);
+  assert.match(serviceWorker, /chrome\.tabs\.group/);
+  assert.match(serviceWorker, /chrome\.tabGroups\.update/);
+  assert.match(serviceWorker, /async function moveTabToGroup/);
+  assert.match(serviceWorker, /async function moveTabGroup/);
+  assert.match(serviceWorker, /chrome\.tabGroups\.move/);
+  assert.match(serviceWorker, /async function renameTabGroup/);
+  assert.match(serviceWorker, /async function ungroupTabGroup/);
+  assert.match(serviceWorker, /chrome\.tabs\.ungroup\(tabIds\)/);
+  assert.match(serviceWorker, /async function collectTabGroupState/);
+  assert.match(serviceWorker, /const groupsByTitle = new Map/);
+  assert.match(serviceWorker, /color: "blue"/);
+  assert.match(serviceWorker, /chrome\.tabs\.update\(id, \{ pinned: Boolean\(pinned\) \}\)/);
+  assert.match(popupCSS, /\.tab-folder\s*\{/);
+  assert.match(popupCSS, /\.tab-folder\.group-drop-before\s*\{/);
+  assert.match(popupCSS, /\.tab-folder-ungroup/);
+  assert.match(popupCSS, /\.watch-preview\s*\{/);
+  assert.match(popupCSS, /\.watch-thumbnail\s*\{/);
   assert.match(popupCSS, /\.protection-detail\s*\{[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis/s);
   assert.match(popupCSS, /\.app-header\s*\{[^}]*padding:\s*20px 30px 17px 20px/s);
   assert.match(popupCSS, /\.app-header\s*\{[^}]*gap:\s*8px/s);
@@ -317,6 +362,9 @@ test("options page exposes separate settings panels without reports", () => {
   assert.match(html, /id="historyPrivacyDomains"/);
   assert.match(html, /data-i18n="cryptoGuardTitle"/);
   assert.match(html, /data-i18n="continueWatchingTitle"/);
+  assert.match(html, /href="https:\/\/x\.com\/browser_monitor"/);
+  assert.match(html, />X · @browser_monitor<\/span>/);
+  assert.doesNotMatch(html, /not__jas/);
   assert.doesNotMatch(html, /id="cryptoGuardEnabled"/);
   assert.match(script, /permissions\.request\(\{ permissions: \["history"\]/);
   assert.match(script, /kind: "setLinkSafetySettings"/);
