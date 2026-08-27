@@ -26,13 +26,15 @@ Browser Monitor is a local-first Chrome extension that combines content protecti
 ## What it does
 
 - blocks common ads, trackers, and cryptomining requests with Chrome Declarative Net Request;
-- adds specialized YouTube/Rutube video-ad controls and optional SponsorBlock community segment skipping;
+- adds respectful native Skip Ad handling on YouTube and optional SponsorBlock community segment skipping;
 - warns before opening suspicious links with local checks for shorteners, lookalike domains, punycode, redirects, and risky social-feed destinations;
 - labels risky search results on popular search engines and lets trusted domains be allowed locally;
 - protects copied wallet addresses against invisible-character tricks and paste substitution attempts;
 - remembers supported long-form videos, reliably restores saved positions, and shows the latest one in a local Continue Watching startup card;
 - offers the tabs from the previous full Chrome session in the same in-page startup card, without opening a separate window or tab until you choose an action;
+- automatically creates and synchronizes native Chrome tab groups, with controls to pin, move, rename, reorder, and dissolve groups;
 - excludes Shorts, short vertical videos, Twitch, Kick, and Telegram Web from long-form video handling;
+- keeps Yandex RSYA/search cosmetic filtering synchronized with the global protection and per-filter settings;
 - shows a local privacy receipt for the current site on demand;
 - can hide selected domains from local Chrome history and supported search suggestions after explicit history permission;
 - shows live local blocking statistics for today and a rolling seven-day window, including top sites and resources;
