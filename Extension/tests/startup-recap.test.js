@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   continueWatchingDisposition,
@@ -23,6 +24,16 @@ test("startup recap selects the newest closed window", () => {
     { lastModified: 60, tab: { url: "https://single.example" } }
   ]);
   assert.equal(result.window.tabs[0].url, "https://new.example");
+});
+
+test("clearing recently closed tabs stores a millisecond cutoff", () => {
+  const serviceWorker = readFileSync(new URL("../core/service-worker.js", import.meta.url), "utf8");
+  const clearStart = serviceWorker.indexOf("async function clearRecentClosedTabs");
+  const clearEnd = serviceWorker.indexOf("async function prepareStartupRecap", clearStart);
+  const clearImplementation = serviceWorker.slice(clearStart, clearEnd);
+  assert.ok(clearStart > 0 && clearEnd > clearStart);
+  assert.match(clearImplementation, /\[RECENT_CLOSED_CUTOFF_KEY\]: Date\.now\(\)/);
+  assert.doesNotMatch(clearImplementation, /Date\.now\(\)\s*\/\s*1_000/);
 });
 
 test("startup recap keeps unique web tabs not already restored", () => {

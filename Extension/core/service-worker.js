@@ -860,7 +860,7 @@ async function getRecentClosedTabs() {
 async function clearRecentClosedTabs() {
   recentClosedTabsCache = null;
   await Promise.all([
-    chrome.storage.local.set({ [RECENT_CLOSED_CUTOFF_KEY]: Math.floor(Date.now() / 1_000) }),
+    chrome.storage.local.set({ [RECENT_CLOSED_CUTOFF_KEY]: Date.now() }),
     chrome.storage.session.remove(STARTUP_RECAP_KEY)
   ]);
   return { ok: true };
@@ -1491,7 +1491,12 @@ async function applyProtectionConfiguration(settings) {
   await installAllowlistRules(settings.allowlistedSites ?? []);
   await installCustomBlockRules(effectiveContentBlockingEnabled ? (settings.customBlockedDomains ?? []) : []);
   await installTemporaryPauseRules(effectiveContentBlockingEnabled ? activeTemporaryPauses(blocker.temporarySitePauses) : {});
-  await installYouTubePlaybackRules(effectiveContentBlockingEnabled);
+  await installYouTubePlaybackRules(
+    effectiveContentBlockingEnabled
+      && settings.adFilterEnabled
+      && settings.videoAdProtectionEnabled
+      && !settings.privacyFilterEnabled
+  );
   await installCryptominingRules(
     effectiveContentBlockingEnabled && settings.cryptominingProtectionEnabled
   );

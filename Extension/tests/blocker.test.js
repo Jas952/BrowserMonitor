@@ -87,6 +87,11 @@ test("YouTube playback remains available while automatic skip is handled in-page
   assert.ok(rule.priority < customBlockRules(["youtube.com"])[0].priority);
 });
 
+test("YouTube playback bypass preserves privacy filtering", () => {
+  const serviceWorker = readFileSync(new URL("../core/service-worker.js", import.meta.url), "utf8");
+  assert.match(serviceWorker, /settings\.videoAdProtectionEnabled\s*&&\s*!settings\.privacyFilterEnabled/);
+});
+
 test("YouTube video protection clicks only the available native skip control", () => {
   const contentScript = readFileSync(new URL("../core/content.js", import.meta.url), "utf8");
   const skipStart = contentScript.indexOf("function clickYouTubeSkipButtons");
@@ -100,6 +105,15 @@ test("YouTube video protection clicks only the available native skip control", (
   assert.match(contentScript, /if \(isYouTubePage\(\)\) \{\s*clickYouTubeSkipButtons\(\);\s*return;/);
   assert.match(contentScript, /settings\.videoAdProtectionEnabled && !isYouTubePage\(\)/);
   assert.doesNotMatch(contentScript, /YOUTUBE_AD_SELECTOR/);
+});
+
+test("Yandex cosmetic cleanup follows the global content-blocking state", () => {
+  const contentScript = readFileSync(new URL("../core/content.js", import.meta.url), "utf8");
+  const scanStart = contentScript.indexOf("function scanYandexAdCards");
+  const scanEnd = contentScript.indexOf("function scheduleProtectionScan", scanStart);
+  const scanImplementation = contentScript.slice(scanStart, scanEnd);
+  assert.ok(scanStart > 0 && scanEnd > scanStart);
+  assert.match(scanImplementation, /!contentBlockingEnabled/);
 });
 
 test("dynamic rules stay inside the reserved Chrome budget", () => {

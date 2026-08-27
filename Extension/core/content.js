@@ -982,7 +982,7 @@
   }
 
   function scanYandexAdCards() {
-    if (!protectionSettings.adFilterEnabled || !isYandexSearchPage()) {
+    if (!contentBlockingEnabled || !protectionSettings.adFilterEnabled || !isYandexSearchPage()) {
       for (const [card, originalDisplay] of yandexHiddenCards) {
         if (card.isConnected) restoreYandexAdCard(card, originalDisplay);
       }
